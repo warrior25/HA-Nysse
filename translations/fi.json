@@ -1,0 +1,18 @@
+{
+    "config": {
+      "error": {
+        "request": "Yhteys Nysse-palvelimiin epäonnistui."
+      },
+      "step": {
+        "user": {
+            "data": {
+                "station": "Pysäkki",
+                "max": "Näytettävien lähtöjen maksimimäärä",
+                "add_another": "Lisää muita pysäkkejä?"
+              },
+              "description": "Syötä seurattava pysäkki.",
+              "title": "Nysse Tampere"
+            }
+        }
+    }
+}
