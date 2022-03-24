@@ -33,7 +33,8 @@ class NysseData:
             after_now = [
                 item
                 for item in self._raw_result
-                if parser.parse(self.get_departure_time(item)).timestamp() > now
+                if self.get_departure_time(item) != "unavailable"
+                and parser.parse(self.get_departure_time(item)).timestamp() > now
             ]
 
             if len(after_now) >= max_items:
@@ -42,7 +43,7 @@ class NysseData:
         return True
 
     def sort_data(self, max_items):
-        self._api_json = self._raw_result
+        self._api_json = self._raw_result[:max_items]
 
     def get_state(self):
         if len(self._api_json) > 0:

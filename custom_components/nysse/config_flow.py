@@ -10,9 +10,6 @@ from .const import CONF_STOPS, CONF_STATION, CONF_MAX, DEFAULT_MAX, DOMAIN, STOP
 _LOGGER = logging.getLogger(__name__)
 
 
-DEFAULT_LINES = {"dlr": "DLR", "jubilee": "Jubilee"}
-
-
 @config_entries.HANDLERS.register(DOMAIN)
 class NysseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Nysse config flow."""
