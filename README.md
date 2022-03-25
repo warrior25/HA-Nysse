@@ -17,7 +17,7 @@ The integration can be set up from the frontend by searching for `Nysse`.
 Simple frontend example using [custom:html-template-card](https://github.com/PiotrMachowski/Home-Assistant-Lovelace-HTML-Jinja2-Template-card)
 ![Example](https://github.com/warrior25/HA-Nysse/raw/main/docs/frontend_example.jpg)
 
-```
+```yaml
 type: custom:html-template-card
 title: Hervantakeskus B
 ignore_line_breaks: true
