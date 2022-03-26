@@ -3,8 +3,6 @@ from dateutil import parser
 import logging
 import pytz
 
-from .const import STOPS
-
 _LOGGER = logging.getLogger(__name__)
 
 LOCAL = pytz.timezone("Europe/Helsinki")
@@ -17,9 +15,11 @@ class NysseData:
         self._api_json = []
         self._station_name = ""
         self._station = ""
+        self._stops = []
 
-    def populate(self, json_data, station_no):
+    def populate(self, json_data, station_no, stop_points):
         self._station = station_no
+        self._stops = stop_points
         if self._station in json_data["body"]:
             self._raw_result = json_data["body"][self._station]
             self._last_update = LOCAL.localize(datetime.now(), is_dst=None)
@@ -70,9 +70,6 @@ class NysseData:
 
             departures.append(departure)
 
-            if len(self._station_name) == 0:
-                self._station_name = STOPS[self._station]
-
         return departures
 
     def get_departure_time(self, item):
@@ -88,6 +85,8 @@ class NysseData:
         return "mdi:bus"
 
     def get_station_name(self):
+        if len(self._station_name) == 0:
+            self._station_name = self._stops[self._station]
         return self._station_name
 
     def get_last_update(self):
@@ -95,15 +94,18 @@ class NysseData:
 
     def get_destination(self, entry):
         if "destinationShortName" in entry:
-            return STOPS[entry["destinationShortName"]]
+            return self._stops[entry["destinationShortName"]]
         return ""
 
     def time_to_station(self, entry, with_destination=True, style="{0}m {1}s"):
-        naive = parser.parse(self.get_departure_time(entry)).replace(tzinfo=None)
-        local_dt = LOCAL.localize(naive, is_dst=None)
-        utc_dt = local_dt.astimezone(pytz.utc)
-        next_departure_time = (utc_dt - datetime.now().astimezone(pytz.utc)).seconds
-        next_departure_dest = self.get_destination(entry)
-        return style.format(
-            int(next_departure_time / 60), int(next_departure_time % 60)
-        ) + (" to " + next_departure_dest if with_destination else "")
+        time = self.get_departure_time(entry)
+        if time != "unavailable":
+            naive = parser.parse(self.get_departure_time(entry)).replace(tzinfo=None)
+            local_dt = LOCAL.localize(naive, is_dst=None)
+            utc_dt = local_dt.astimezone(pytz.utc)
+            next_departure_time = (utc_dt - datetime.now().astimezone(pytz.utc)).seconds
+            next_departure_dest = self.get_destination(entry)
+            return style.format(
+                int(next_departure_time / 60), int(next_departure_time % 60)
+            ) + (" to " + next_departure_dest if with_destination else "")
+        return "unavailable"

@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import json
 import voluptuous as vol
+from .fetch_stop_points import fetch_stop_points
 import homeassistant.helpers.config_validation as cv
 from datetime import timedelta
 from homeassistant import config_entries, core
@@ -21,7 +22,7 @@ from .const import (
     DEFAULT_MAX,
     DEFAULT_NAME,
     DOMAIN,
-    NYSSE_URL,
+    NYSSE_STOP_URL,
 )
 from .network import request
 from .nysse_data import NysseData
@@ -48,8 +49,8 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 async def async_setup_entry(
     hass: core.HomeAssistant,
     config_entry: config_entries.ConfigEntry,
-    async_add_entities,
-):
+    async_add_entities: AddEntitiesCallback,
+) -> None:
     """Setup sensors from a config entry created in the integrations UI."""
     config = hass.data[DOMAIN][config_entry.entry_id]
     name = config[CONF_NAME] if CONF_NAME in config else DEFAULT_NAME
@@ -89,31 +90,34 @@ async def async_setup_platform(
                     stop["max"],
                 )
             )
+
     async_add_entities(sensors, update_before_add=True)
 
 
 class NysseSensor(SensorEntity):
     """Representation of a Sensor."""
 
-    def __init__(self, name, station, max):
+    def __init__(self, name, station, maximum):
         """Initialize the sensor."""
         self._platformname = name
         self._name = name + "_" + station
         self.station_no = station
-        self.max_items = int(max)
+        self.max_items = int(maximum)
 
         self._state = None
         self._destination = ""
         self._nysse_data = NysseData()
+        self._departures = []
+        self._stops = []
+
+    @property
+    def unique_id(self):
+        return self._platformname + "_" + self.station_no
 
     @property
     def name(self) -> str:
         station = self._nysse_data.get_station_name()
-        if self._destination and station:
-            return "{0} to {1}".format(station, self._destination)
-        if station:
-            return "{0} - Idle".format(station)
-        return self._name
+        return "{0} - {1} ({2})".format(self._platformname, station, self.station_no)
 
     @property
     def icon(self):
@@ -129,13 +133,15 @@ class NysseSensor(SensorEntity):
         """Fetch new state data for the sensor.
         This is the only method that should fetch new data for Home Assistant.
         """
+        if len(self._stops) == 0:
+            self._stops = await fetch_stop_points(False)
 
-        url_base = NYSSE_URL.format(self.station_no)
+        url_base = NYSSE_STOP_URL.format(self.station_no)
         _LOGGER.info("Fetching data from: %s", url_base)
 
         if self._nysse_data.is_data_stale(self.max_items):
             try:
-                result = await request(url_base, self)
+                result = await request(url_base)
                 if not result:
                     _LOGGER.warning("There was no reply from TfL servers")
                     self._state = "Cannot reach TfL"
@@ -145,13 +151,15 @@ class NysseSensor(SensorEntity):
                 _LOGGER.warning("Something broke")
                 self._state = "Cannot reach TfL"
                 return
-            value = self._nysse_data.populate(result, self.station_no)
+
+            value = self._nysse_data.populate(result, self.station_no, self._stops)
             if not value:
                 _LOGGER.warning("Received no data for station %s", self.station_no)
                 return
 
         self._nysse_data.sort_data(self.max_items)
         self._state = self._nysse_data.get_state()
+        self._departures = self._nysse_data.get_departures()
 
     @property
     def extra_state_attributes(self):
@@ -161,8 +169,8 @@ class NysseSensor(SensorEntity):
         if self._nysse_data.is_empty():
             return attributes
 
-        attributes["departures"] = self._nysse_data.get_departures()
-        self._destination = self._nysse_data.get_departures()[0]["destination"]
+        attributes["departures"] = self._departures
+        self._destination = self._departures[0]["destination"]
         attributes["station_name"] = self._nysse_data.get_station_name()
 
         return attributes

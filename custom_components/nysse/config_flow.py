@@ -2,10 +2,17 @@ import logging
 from typing import Any, Optional
 
 from homeassistant import config_entries
+from .fetch_stop_points import fetch_stop_points
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 
-from .const import CONF_STOPS, CONF_STATION, CONF_MAX, DEFAULT_MAX, DOMAIN, STOPS
+from .const import (
+    CONF_STOPS,
+    CONF_STATION,
+    CONF_MAX,
+    DEFAULT_MAX,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,6 +27,7 @@ class NysseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: Optional[dict[str, Any]] = None):
         errors: dict[str, str] = {}
+        stations = await fetch_stop_points(True)
         if user_input is not None:
             self.data[CONF_STOPS].append(
                 {
@@ -29,16 +37,16 @@ class NysseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             # If user ticked the box show this form again so they can add an
             # additional station.
-            if user_input.get("add_another", False):
+
+            if user_input.get("add_another", True):
                 return await self.async_step_user()
 
-            return self.async_create_entry(
-                title=user_input[CONF_STATION], data=self.data
-            )
+            if len(self.data[CONF_STOPS]) > 1:
+                return self.async_create_entry(title="Many stations", data=self.data)
 
-        stations = dict(sorted(STOPS.items(), key=lambda item: item[1]))
-        for k in stations.keys():
-            stations[k] += " (" + k + ")"
+            return self.async_create_entry(
+                title=stations[user_input[CONF_STATION]], data=self.data
+            )
 
         return self.async_show_form(
             step_id="user",
