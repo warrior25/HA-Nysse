@@ -12,6 +12,12 @@ Copy the files to your `custom_components` folder.
 
 The integration can be set up from the frontend by searching for `Nysse`.
 
+## Usage
+
+Each station creates a sensor which contains data for departures from that station. Explanations for non self-explanatory attributes are listed below.
+
+`realtime` - Indicates if the data is pulled from realtime vehicle monitoring or timetable data
+
 ## Frontend example
 
 Simple frontend example using [custom:html-template-card](https://github.com/PiotrMachowski/Home-Assistant-Lovelace-HTML-Jinja2-Template-card)
@@ -19,15 +25,18 @@ Simple frontend example using [custom:html-template-card](https://github.com/Pio
 
 ```yaml
 type: custom:html-template-card
-title: Hervantakeskus B
+title: Hervanan kampus A
 ignore_line_breaks: true
 content: >
-  {% for departure in states.sensor.nysse_0834.attributes.departures %}
+  {% for departure in
+  states.sensor.nysse_hervannan_kampus_a_0835.attributes.departures %}
 
   <div style="display:grid; grid-template-columns: 2fr 0.5fr; font-size: 20px">
-  <div><ha-icon style="padding: 10px 10px 10px 10px" icon={{states.sensor.nysse_0834.attributes.icon}}></ha-icon>
-  {{ departure.line}} - {{ departure.destination }}</div>
-  <div style="text-align: right">{{ departure.time }} min</div></div>
+  <div><ha-icon style="padding: 10px 10px 10px 10px" icon={{ departure.icon
+  }}></ha-icon> {{ departure.line }} - {{ departure.destination }}</div><div
+  style="text-align: right"> {% if departure.time | int < 26  %}
+  {{departure.time }} min {% else %} {{departure.departure}} {% endif
+  %}</div></div>
 
   {% endfor %}
   ```

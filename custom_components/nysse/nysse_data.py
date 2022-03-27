@@ -10,40 +10,44 @@ LOCAL = pytz.timezone("Europe/Helsinki")
 
 class NysseData:
     def __init__(self):
-        self._raw_result = []
+        self._arrival_data = []
+        self._journey_data = []
         self._last_update = None
         self._api_json = []
         self._station_name = ""
         self._station = ""
         self._stops = []
 
-    def populate(self, json_data, station_no, stop_points):
+    def populate(self, arrival_data, journey_data, station_no, stop_points):
         self._station = station_no
         self._stops = stop_points
-        if self._station in json_data["body"]:
-            self._raw_result = json_data["body"][self._station]
-            self._last_update = LOCAL.localize(datetime.now(), is_dst=None)
-            return True
-        return False
+        self._last_update = datetime.now().astimezone(LOCAL)
+
+        if self._station in arrival_data["body"]:
+            self._arrival_data = arrival_data["body"][self._station]
+
+        self._journey_data = journey_data
 
     def is_data_stale(self, max_items):
-        if len(self._raw_result) > 0:
+        if len(self._arrival_data) > 0:
             # check if there are enough already stored to skip a request
-            now = datetime.now().timestamp()
+            now = datetime.now().astimezone(LOCAL)
             after_now = [
                 item
-                for item in self._raw_result
+                for item in self._arrival_data
                 if self.get_departure_time(item) != "unavailable"
-                and parser.parse(self.get_departure_time(item)).timestamp() > now
+                and parser.parse(self.get_departure_time(item)) > now
             ]
-
             if len(after_now) >= max_items:
-                self._raw_result = after_now
+                self._arrival_data = after_now
                 return False
         return True
 
     def sort_data(self, max_items):
-        self._api_json = self._raw_result[:max_items]
+        self._api_json = self._arrival_data[:max_items]
+        if len(self._api_json) < max_items:
+            for i in range(len(self._api_json), max_items):
+                self._api_json.append(self._journey_data[i])
 
     def get_state(self):
         if len(self._api_json) > 0:
@@ -59,24 +63,28 @@ class NysseData:
         for item in self._api_json:
             departure = {
                 "time_to_station": self.time_to_station(item, False),
-                "line": item["lineRef"],
-                "direction": item["directionRef"],
-                "departure": self.get_departure_time(item),
-                "destination": self.get_destination(item),
                 "time": self.time_to_station(item, False, "{0}"),
-                "expected": self.get_departure_time(item),
+                "line": item["lineRef"],
+                "destination": self.get_destination(item),
+                "departure": self.get_departure_time(item),
                 "icon": self.get_line_icon(item["lineRef"]),
+                "realtime": self.is_realtime(item),
             }
 
             departures.append(departure)
 
         return departures
 
+    def is_realtime(self, item):
+        if "non-realtime" in item:
+            return False
+        return True
+
     def get_departure_time(self, item):
         if "expectedArrivalTime" in item["call"]:
-            return item["call"]["expectedArrivalTime"]
+            return parser.parse(item["call"]["expectedArrivalTime"]).strftime("%H:%M")
         if "aimedArrivalTime" in item["call"]:
-            return item["call"]["aimedArrivalTime"]
+            return parser.parse(item["call"]["aimedArrivalTime"]).strftime("%H:%M")
         return "unavailable"
 
     def get_line_icon(self, line_no):

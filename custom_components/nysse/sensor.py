@@ -1,12 +1,14 @@
 """Platform for sensor integration."""
 from __future__ import annotations
+from dateutil import parser
 
 import logging
 import json
+import pytz
 import voluptuous as vol
 from .fetch_stop_points import fetch_stop_points
 import homeassistant.helpers.config_validation as cv
-from datetime import timedelta
+from datetime import timedelta, datetime
 from homeassistant import config_entries, core
 from homeassistant.components.sensor import SensorEntity, PLATFORM_SCHEMA
 from homeassistant.const import CONF_NAME
@@ -22,6 +24,7 @@ from .const import (
     DEFAULT_MAX,
     DEFAULT_NAME,
     DOMAIN,
+    NYSSE_JOURNEYS_URL,
     NYSSE_STOP_URL,
 )
 from .network import request
@@ -44,6 +47,8 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Required(CONF_STOPS): vol.All(cv.ensure_list, [CONFIG_STOP]),
     }
 )
+
+LOCAL = pytz.timezone("Europe/Helsinki")
 
 
 async def async_setup_entry(
@@ -110,6 +115,36 @@ class NysseSensor(SensorEntity):
         self._departures = []
         self._stops = []
 
+    def modify_journey_data(self, journeys, next_day):
+        journeys_data = []
+
+        if next_day:
+            delta = timedelta(days=1)
+        else:
+            delta = timedelta(seconds=0)
+
+        for page in journeys:
+            for journey in page["body"]:
+                for stop_point in journey["calls"]:
+                    if stop_point["stopPoint"]["shortName"] == self.station_no and (
+                        LOCAL.localize(parser.parse(stop_point["arrivalTime"]) + delta)
+                    ) > datetime.now().astimezone(LOCAL):
+                        data_set = {}
+                        data_set["lineRef"] = journey["lineUrl"].split("/")[7]
+                        data_set["destinationShortName"] = journey["calls"][
+                            len(journey["calls"]) - 1
+                        ]["stopPoint"]["shortName"]
+                        data_set["non-realtime"] = True
+                        data_set2 = {}
+                        data_set2["expectedArrivalTime"] = stop_point["arrivalTime"]
+                        data_set["call"] = data_set2
+
+                        json_dump = json.dumps(data_set)
+
+                        journeys_data.append(json.loads(json_dump))
+
+        return journeys_data
+
     @property
     def unique_id(self):
         return self._platformname + "_" + self.station_no
@@ -136,26 +171,64 @@ class NysseSensor(SensorEntity):
         if len(self._stops) == 0:
             self._stops = await fetch_stop_points(False)
 
-        url_base = NYSSE_STOP_URL.format(self.station_no)
-        _LOGGER.info("Fetching data from: %s", url_base)
+        journeys_index = 0
+        journeys = []
+        journeys_modified = []
+        date = datetime.now().strftime("%A")
+        next_day = False
+
+        arrival_url = NYSSE_STOP_URL.format(self.station_no)
 
         if self._nysse_data.is_data_stale(self.max_items):
             try:
-                result = await request(url_base)
-                if not result:
-                    _LOGGER.warning("There was no reply from TfL servers")
-                    self._state = "Cannot reach TfL"
+                arrivals = await request(arrival_url)
+
+                if not arrivals:
+                    _LOGGER.warning("There was no reply from Nysse servers")
+                    self._state = "Cannot reach Nysse"
                     return
-                result = json.loads(result)
+                arrivals = json.loads(arrivals)
+
+                while True:
+                    journeys_url = NYSSE_JOURNEYS_URL.format(
+                        self.station_no, date, journeys_index
+                    )
+
+                    journeys_data = await request(journeys_url)
+
+                    if not journeys_data:
+                        _LOGGER.warning("There was no reply from Nysse servers")
+                        self._state = "Cannot reach Nysse"
+                        return
+
+                    journeys_data_json = json.loads(journeys_data)
+
+                    journeys.append(journeys_data_json)
+
+                    if journeys_data_json["data"]["headers"]["paging"]["moreData"]:
+                        journeys_index += 100
+
+                    else:
+                        journeys = self.modify_journey_data(journeys, next_day)
+                        for journey in journeys:
+                            journeys_modified.append(journey)
+
+                        if len(journeys_modified) < self.max_items:
+                            journeys.clear()
+                            journeys_index = 0
+                            next_day = True
+                            date = (datetime.now() + timedelta(days=1)).strftime("%A")
+                        else:
+                            break
+
             except OSError:
                 _LOGGER.warning("Something broke")
-                self._state = "Cannot reach TfL"
+                self._state = "Cannot reach Nysse"
                 return
 
-            value = self._nysse_data.populate(result, self.station_no, self._stops)
-            if not value:
-                _LOGGER.warning("Received no data for station %s", self.station_no)
-                return
+            self._nysse_data.populate(
+                arrivals, journeys_modified, self.station_no, self._stops
+            )
 
         self._nysse_data.sort_data(self.max_items)
         self._state = self._nysse_data.get_state()
