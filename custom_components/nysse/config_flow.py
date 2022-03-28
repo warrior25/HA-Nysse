@@ -1,4 +1,3 @@
-import logging
 from typing import Any, Optional
 
 from homeassistant import config_entries
@@ -13,8 +12,6 @@ from .const import (
     DEFAULT_MAX,
     DOMAIN,
 )
-
-_LOGGER = logging.getLogger(__name__)
 
 
 @config_entries.HANDLERS.register(DOMAIN)

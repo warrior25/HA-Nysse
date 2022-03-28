@@ -1,9 +1,5 @@
-from typing_extensions import Self
 import aiohttp
 import async_timeout
-import logging
-
-_LOGGER = logging.getLogger(__name__)
 
 
 async def fetch(session, url):

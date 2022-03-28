@@ -114,6 +114,9 @@ class NysseSensor(SensorEntity):
         self._nysse_data = NysseData()
         self._departures = []
         self._stops = []
+        self._journeys = []
+        self._journeys_modified = []
+        self._journeys_date = datetime.now().strftime("%A")
 
     def modify_journey_data(self, journeys, next_day):
         journeys_data = []
@@ -172,10 +175,6 @@ class NysseSensor(SensorEntity):
             self._stops = await fetch_stop_points(False)
 
         journeys_index = 0
-        journeys = []
-        journeys_modified = []
-        date = datetime.now().strftime("%A")
-        next_day = False
 
         arrival_url = NYSSE_STOP_URL.format(self.station_no)
 
@@ -189,37 +188,52 @@ class NysseSensor(SensorEntity):
                     return
                 arrivals = json.loads(arrivals)
 
-                while True:
-                    journeys_url = NYSSE_JOURNEYS_URL.format(
-                        self.station_no, date, journeys_index
-                    )
+                next_day = bool(
+                    parser.parse(self._journeys_date)
+                    > parser.parse(datetime.now().strftime("%A"))
+                )
 
-                    journeys_data = await request(journeys_url)
+                self._journeys_modified = self.modify_journey_data(
+                    self._journeys, next_day
+                )
 
-                    if not journeys_data:
-                        _LOGGER.warning("There was no reply from Nysse servers")
-                        self._state = "Cannot reach Nysse"
-                        return
+                if len(self._journeys_modified) < self.max_items:
+                    self._journeys_modified.clear()
+                    self._journeys.clear()
+                    _LOGGER.info("Fetching timetable data for %s", self._journeys_date)
 
-                    journeys_data_json = json.loads(journeys_data)
+                    while True:
+                        journeys_url = NYSSE_JOURNEYS_URL.format(
+                            self.station_no, self._journeys_date, journeys_index
+                        )
 
-                    journeys.append(journeys_data_json)
+                        journeys_data = await request(journeys_url)
 
-                    if journeys_data_json["data"]["headers"]["paging"]["moreData"]:
-                        journeys_index += 100
+                        if not journeys_data:
+                            _LOGGER.warning("There was no reply from Nysse servers")
+                            self._state = "Cannot reach Nysse"
+                            return
 
-                    else:
-                        journeys = self.modify_journey_data(journeys, next_day)
-                        for journey in journeys:
-                            journeys_modified.append(journey)
+                        journeys_data_json = json.loads(journeys_data)
 
-                        if len(journeys_modified) < self.max_items:
-                            journeys.clear()
-                            journeys_index = 0
-                            next_day = True
-                            date = (datetime.now() + timedelta(days=1)).strftime("%A")
+                        self._journeys.append(journeys_data_json)
+
+                        if journeys_data_json["data"]["headers"]["paging"]["moreData"]:
+                            journeys_index += 100
+
                         else:
-                            break
+                            self._journeys_modified = self.modify_journey_data(
+                                self._journeys, next_day
+                            )
+
+                            if len(self._journeys_modified) < self.max_items:
+                                self._journeys_modified.clear()
+                                journeys_index = 0
+                                self._journeys_date = (
+                                    datetime.now() + timedelta(days=1)
+                                ).strftime("%A")
+                            else:
+                                break
 
             except OSError:
                 _LOGGER.warning("Something broke")
@@ -227,7 +241,7 @@ class NysseSensor(SensorEntity):
                 return
 
             self._nysse_data.populate(
-                arrivals, journeys_modified, self.station_no, self._stops
+                arrivals, self._journeys_modified, self.station_no, self._stops
             )
 
         self._nysse_data.sort_data(self.max_items)

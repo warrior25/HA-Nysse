@@ -1,9 +1,6 @@
 from datetime import datetime
 from dateutil import parser
-import logging
 import pytz
-
-_LOGGER = logging.getLogger(__name__)
 
 LOCAL = pytz.timezone("Europe/Helsinki")
 
@@ -36,7 +33,7 @@ class NysseData:
                 item
                 for item in self._arrival_data
                 if self.get_departure_time(item) != "unavailable"
-                and parser.parse(self.get_departure_time(item)) > now
+                and LOCAL.localize(parser.parse(self.get_departure_time(item))) > now
             ]
             if len(after_now) >= max_items:
                 self._arrival_data = after_now
