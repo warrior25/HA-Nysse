@@ -172,6 +172,7 @@ class NysseSensor(SensorEntity):
         This is the only method that should fetch new data for Home Assistant.
         """
         if len(self._stops) == 0:
+            _LOGGER.info("Fectching stop points")
             self._stops = await fetch_stop_points(False)
 
         journeys_index = 0
@@ -180,10 +181,11 @@ class NysseSensor(SensorEntity):
 
         if self._nysse_data.is_data_stale(self.max_items):
             try:
+                _LOGGER.info("Fectching arrivals from %s", arrival_url)
                 arrivals = await request(arrival_url)
 
                 if not arrivals:
-                    _LOGGER.warning("There was no reply from Nysse servers")
+                    _LOGGER.warning("There was no reply from Nysse servers when trying to fetch arrivals")
                     self._state = "Cannot reach Nysse"
                     return
                 arrivals = json.loads(arrivals)
@@ -210,7 +212,7 @@ class NysseSensor(SensorEntity):
                         journeys_data = await request(journeys_url)
 
                         if not journeys_data:
-                            _LOGGER.warning("There was no reply from Nysse servers")
+                            _LOGGER.warning("There was no reply from Nysse servers when trying to fetch timetables")
                             self._state = "Cannot reach Nysse"
                             return
 

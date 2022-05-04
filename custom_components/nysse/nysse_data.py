@@ -1,9 +1,11 @@
 from datetime import datetime
 from dateutil import parser
 import pytz
+import logging
 
 LOCAL = pytz.timezone("Europe/Helsinki")
 
+_LOGGER = logging.getLogger(__name__)
 
 class NysseData:
     def __init__(self):
@@ -26,18 +28,19 @@ class NysseData:
         self._journey_data = journey_data
 
     def is_data_stale(self, max_items):
-        if len(self._arrival_data) > 0:
-            # check if there are enough already stored to skip a request
-            now = datetime.now().astimezone(LOCAL)
-            after_now = [
-                item
-                for item in self._arrival_data
-                if self.get_departure_time(item) != "unavailable"
-                and LOCAL.localize(parser.parse(self.get_departure_time(item))) > now
-            ]
-            if len(after_now) >= max_items:
-                self._arrival_data = after_now
-                return False
+        now = datetime.now().astimezone(LOCAL)
+        for item in self._api_json:
+            if self.get_departure_time(item) == "unavailable":
+                _LOGGER.warning("Removing unavailable data")
+                self._api_json.remove(item)
+                break
+            if LOCAL.localize(parser.parse(self.get_departure_time(item))) < now:
+                _LOGGER.warning("Removing stale data")
+                self._api_json.remove(item)
+                _LOGGER.warning(self._api_json)
+                break
+        #if len(self._api_json) >= max_items:
+        #    return False
         return True
 
     def sort_data(self, max_items):
@@ -67,8 +70,8 @@ class NysseData:
                 "icon": self.get_line_icon(item["lineRef"]),
                 "realtime": self.is_realtime(item),
             }
-
-            departures.append(departure)
+            if departure["time"] != "unavailable":
+                departures.append(departure)
 
         return departures
 
