@@ -8,7 +8,7 @@ Home Assistant integration to fetch public transport data for Tampere, Finland
 
 ## Installation
 
-Copy the files to your `custom_components` folder.
+Copy the files to your `custom_components` folder or install as a HACS custom repository. More info on HACS [here](https://hacs.xyz/).
 
 ## Setup
 
