@@ -1,7 +1,7 @@
 DOMAIN = "nysse"
 
 DEFAULT_NAME = "Nysse"
-DEFAULT_ICON = "mdi:train"
+DEFAULT_ICON = "mdi:bus"
 CONF_STOPS = "stops"
 
 CONF_LINE = "line"

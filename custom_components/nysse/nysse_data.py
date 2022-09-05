@@ -27,31 +27,29 @@ class NysseData:
 
         self._journey_data = journey_data
 
-    def is_data_stale(self, max_items):
-        now = datetime.now().astimezone(LOCAL)
+    def is_data_stale(self):
         for item in self._api_json:
-            if self.get_departure_time(item) == "unavailable":
+            if self.get_departure_time(item, True) == "unavailable":
                 _LOGGER.warning("Removing unavailable data")
                 self._api_json.remove(item)
                 break
-            if LOCAL.localize(parser.parse(self.get_departure_time(item))) < now:
+            if (self.get_departure_time(item, False)) < datetime.now().astimezone(LOCAL):
                 _LOGGER.warning("Removing stale data")
                 self._api_json.remove(item)
-                _LOGGER.warning(self._api_json)
                 break
-        #if len(self._api_json) >= max_items:
-        #    return False
         return True
 
     def sort_data(self, max_items):
         self._api_json = self._arrival_data[:max_items]
+        #_LOGGER.warning("self._journey_data:\n %s", self._journey_data)
         if len(self._api_json) < max_items:
             for i in range(len(self._api_json), max_items):
                 self._api_json.append(self._journey_data[i])
+        #_LOGGER.info("self._api_json:\n %s", self._api_json)
 
     def get_state(self):
         if len(self._api_json) > 0:
-            depart_time = self.get_departure_time(self._api_json[0])
+            depart_time = self.get_departure_time(self._api_json[0], True)
             if depart_time != "unavailable":
                 return parser.parse(depart_time).strftime("%H:%M")
 
@@ -66,13 +64,14 @@ class NysseData:
                 "time": self.time_to_station(item, False, "{0}"),
                 "line": item["lineRef"],
                 "destination": self.get_destination(item),
-                "departure": self.get_departure_time(item),
+                "departure": self.get_departure_time(item, True),
                 "icon": self.get_line_icon(item["lineRef"]),
                 "realtime": self.is_realtime(item),
             }
             if departure["time"] != "unavailable":
                 departures.append(departure)
 
+        departures = sorted(departures, key=lambda d: d['time_to_station'])
         return departures
 
     def is_realtime(self, item):
@@ -80,12 +79,21 @@ class NysseData:
             return False
         return True
 
-    def get_departure_time(self, item):
+    def get_departure_time(self, item, stringify):
         if "expectedArrivalTime" in item["call"]:
-            return parser.parse(item["call"]["expectedArrivalTime"]).strftime("%H:%M")
+            parsed = parser.parse(item["call"]["expectedArrivalTime"])
+            if stringify:
+                return parsed.strftime("%H:%M")
+            else:
+                return parsed
         if "aimedArrivalTime" in item["call"]:
-            return parser.parse(item["call"]["aimedArrivalTime"]).strftime("%H:%M")
-        return "unavailable"
+            parsed = parser.parse(item["call"]["aimedArrivalTime"]).strftime("%H:%M")
+            if stringify:
+                return parsed.strftime("%H:%M")
+            else:
+                return parsed
+        else:
+            return "unavailable"
 
     def get_line_icon(self, line_no):
         if line_no in ("1", "3"):
@@ -106,9 +114,9 @@ class NysseData:
         return ""
 
     def time_to_station(self, entry, with_destination=True, style="{0}m {1}s"):
-        time = self.get_departure_time(entry)
+        time = self.get_departure_time(entry, True)
         if time != "unavailable":
-            naive = parser.parse(self.get_departure_time(entry)).replace(tzinfo=None)
+            naive = parser.parse(self.get_departure_time(entry, True)).replace(tzinfo=None)
             local_dt = LOCAL.localize(naive, is_dst=None)
             utc_dt = local_dt.astimezone(pytz.utc)
             next_departure_time = (utc_dt - datetime.now().astimezone(pytz.utc)).seconds

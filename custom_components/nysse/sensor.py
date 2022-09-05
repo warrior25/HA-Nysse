@@ -116,21 +116,20 @@ class NysseSensor(SensorEntity):
         self._stops = []
         self._journeys = []
         self._journeys_modified = []
-        self._journeys_date = datetime.now().strftime("%A")
+        self._journeys_date = datetime.now().astimezone(LOCAL).strftime("%A")
 
     def modify_journey_data(self, journeys, next_day):
         journeys_data = []
 
-        if next_day:
-            delta = timedelta(days=1)
-        else:
-            delta = timedelta(seconds=0)
-
         for page in journeys:
             for journey in page["body"]:
                 for stop_point in journey["calls"]:
+                    if ((journeys.index(page) == len(journeys) - 1) and (page["body"].index(journey) == len(page["body"]) - 1) and ((stop_point["arrivalTime"])[:2] == "00")) or next_day:
+                        delta = timedelta(days=1)
+                    else:
+                        delta = timedelta(seconds=0)
                     if stop_point["stopPoint"]["shortName"] == self.station_no and (
-                        LOCAL.localize(parser.parse(stop_point["arrivalTime"]) + delta)
+                        parser.parse((datetime.now().astimezone(LOCAL)+delta).strftime("%Y-%m-%d") + "T" + stop_point["arrivalTime"] + datetime.now(LOCAL).strftime("%z")[:3] + ":" + datetime.now(LOCAL).strftime("%z")[3:])
                     ) > datetime.now().astimezone(LOCAL):
                         data_set = {}
                         data_set["lineRef"] = journey["lineUrl"].split("/")[7]
@@ -139,7 +138,8 @@ class NysseSensor(SensorEntity):
                         ]["stopPoint"]["shortName"]
                         data_set["non-realtime"] = True
                         data_set2 = {}
-                        data_set2["expectedArrivalTime"] = stop_point["arrivalTime"]
+
+                        data_set2["expectedArrivalTime"] = (datetime.now().astimezone(LOCAL)+delta).strftime("%Y-%m-%d") + "T" + stop_point["arrivalTime"] + datetime.now(LOCAL).strftime("%z")[:3] + ":" + datetime.now(LOCAL).strftime("%z")[3:]
                         data_set["call"] = data_set2
 
                         json_dump = json.dumps(data_set)
@@ -157,10 +157,10 @@ class NysseSensor(SensorEntity):
         station = self._nysse_data.get_station_name()
         return "{0} - {1} ({2})".format(self._platformname, station, self.station_no)
 
-    @property
-    def icon(self):
-        """Icon of the sensor."""
-        return DEFAULT_ICON
+    #@property
+    #def icon(self):
+    #    """Icon of the sensor."""
+    #    return DEFAULT_ICON
 
     @property
     def state(self):
@@ -179,40 +179,38 @@ class NysseSensor(SensorEntity):
 
         arrival_url = NYSSE_STOP_URL.format(self.station_no)
 
-        if self._nysse_data.is_data_stale(self.max_items):
+        if self._nysse_data.is_data_stale():
             try:
                 _LOGGER.info("Fectching arrivals from %s", arrival_url)
                 arrivals = await request(arrival_url)
 
                 if not arrivals:
-                    _LOGGER.warning("There was no reply from Nysse servers when trying to fetch arrivals")
+                    _LOGGER.warning("Can't fetch arrivals. Incorrect response from %s", arrival_url)
                     self._state = "Cannot reach Nysse"
                     return
                 arrivals = json.loads(arrivals)
 
-                next_day = bool(
-                    parser.parse(self._journeys_date)
-                    > parser.parse(datetime.now().strftime("%A"))
-                )
+                next_day = self._journeys_date != datetime.now().astimezone(LOCAL).strftime("%A")
 
                 self._journeys_modified = self.modify_journey_data(
                     self._journeys, next_day
                 )
 
                 if len(self._journeys_modified) < self.max_items:
+                    _LOGGER.info("Not enough timetable data")
                     self._journeys_modified.clear()
                     self._journeys.clear()
-                    _LOGGER.info("Fetching timetable data for %s", self._journeys_date)
 
                     while True:
                         journeys_url = NYSSE_JOURNEYS_URL.format(
                             self.station_no, self._journeys_date, journeys_index
                         )
 
+                        _LOGGER.info("Fetching timetable data for %s, from %s", self._journeys_date, journeys_url)
                         journeys_data = await request(journeys_url)
 
                         if not journeys_data:
-                            _LOGGER.warning("There was no reply from Nysse servers when trying to fetch timetables")
+                            _LOGGER.error("Can't fetch timetables. Incorrect response from %s", journeys_url)
                             self._state = "Cannot reach Nysse"
                             return
 
@@ -224,16 +222,23 @@ class NysseSensor(SensorEntity):
                             journeys_index += 100
 
                         else:
-                            self._journeys_modified = self.modify_journey_data(
+                            modified_journey_data = self.modify_journey_data(
                                 self._journeys, next_day
                             )
 
+                            for journey in modified_journey_data:
+                                self._journeys_modified.append(journey)
+
                             if len(self._journeys_modified) < self.max_items:
-                                self._journeys_modified.clear()
+                                if next_day:
+                                    _LOGGER.warning("Not enough timetable data was found. Reduce the amount of requested departures")
+                                _LOGGER.info("Not enough timetable data remaining for today")
+                                self._journeys.clear()
                                 journeys_index = 0
                                 self._journeys_date = (
-                                    datetime.now() + timedelta(days=1)
+                                    datetime.now().astimezone(LOCAL) + timedelta(days=1)
                                 ).strftime("%A")
+                                next_day = True
                             else:
                                 break
 

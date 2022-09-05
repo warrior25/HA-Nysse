@@ -1,7 +1,6 @@
 import aiohttp
 import async_timeout
 
-
 async def fetch(session, url):
     try:
         with async_timeout.timeout(15):
