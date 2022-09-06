@@ -30,11 +30,11 @@ class NysseData:
     def is_data_stale(self):
         for item in self._api_json:
             if self.get_departure_time(item, True) == "unavailable":
-                _LOGGER.warning("Removing unavailable data")
+                #_LOGGER.log("Removing unavailable data")
                 self._api_json.remove(item)
                 break
             if (self.get_departure_time(item, False)) < datetime.now().astimezone(LOCAL):
-                _LOGGER.warning("Removing stale data")
+                #_LOGGER.log("Removing stale data")
                 self._api_json.remove(item)
                 break
         return True
@@ -60,15 +60,14 @@ class NysseData:
         departures = []
         for item in self._api_json:
             departure = {
-                "time_to_station": self.time_to_station(item, False),
-                "time": self.time_to_station(item, False, "{0}"),
-                "line": item["lineRef"],
                 "destination": self.get_destination(item),
+                "line": item["lineRef"],
                 "departure": self.get_departure_time(item, True),
+                "time_to_station": self.time_to_station(item, False, "{0}"),
                 "icon": self.get_line_icon(item["lineRef"]),
                 "realtime": self.is_realtime(item),
             }
-            if departure["time"] != "unavailable":
+            if departure["time_to_station"] != "unavailable":
                 departures.append(departure)
 
         departures = sorted(departures, key=lambda d: d['time_to_station'])
@@ -121,7 +120,7 @@ class NysseData:
             utc_dt = local_dt.astimezone(pytz.utc)
             next_departure_time = (utc_dt - datetime.now().astimezone(pytz.utc)).seconds
             next_departure_dest = self.get_destination(entry)
-            return style.format(
+            return int(style.format(
                 int(next_departure_time / 60), int(next_departure_time % 60)
-            ) + (" to " + next_departure_dest if with_destination else "")
+            ) + (" to " + next_departure_dest if with_destination else ""))
         return "unavailable"
