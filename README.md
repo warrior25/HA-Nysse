@@ -36,8 +36,8 @@ content: >
   <div style="display:grid; grid-template-columns: 2fr 0.5fr; font-size: 20px">
   <div><ha-icon style="padding: 10px 10px 10px 10px" icon={{ departure.icon
   }}></ha-icon> {{ departure.line }} - {{ departure.destination }}</div><div
-  style="text-align: right"> {% if departure.time | int < 26  %}
-  {{departure.time }} min {% else %} {{departure.departure}} {% endif
+  style="text-align: right"> {% if departure.time_to_station | int < 26  %}
+  {{departure.time_to_station }} min {% else %} {{departure.departure}} {% endif
   %}</div></div>
 
   {% endfor %}
