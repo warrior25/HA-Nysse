@@ -148,6 +148,12 @@ class NysseSensor(SensorEntity):
 
         return journeys_data
 
+    def remove_stale_journeys(self):
+        for journey in self._journeys_modified:
+            if parser.parse(journey["call"]["expectedArrivalTime"]) < datetime.now().astimezone(LOCAL):
+                _LOGGER.info("Removing stale journeys")
+                self._journeys_modified.remove(journey)
+
     @property
     def unique_id(self):
         return self._platformname + "_" + self.station_no
@@ -179,77 +185,81 @@ class NysseSensor(SensorEntity):
 
         arrival_url = NYSSE_STOP_URL.format(self.station_no)
 
-        if self._nysse_data.is_data_stale():
-            try:
-                _LOGGER.info("Fectching arrivals from %s", arrival_url)
-                arrivals = await request(arrival_url)
+        try:
+            _LOGGER.info("Fectching arrivals from %s", arrival_url)
+            arrivals = await request(arrival_url)
 
-                if not arrivals:
-                    _LOGGER.warning("Can't fetch arrivals. Incorrect response from %s", arrival_url)
-                    self._state = "Cannot reach Nysse"
-                    return
+            if not arrivals:
+                _LOGGER.warning("Can't fetch arrivals. Incorrect response from %s", arrival_url)
+                _LOGGER.info(arrivals)
+                self._state = "Cannot reach Nysse"
+            else:
                 arrivals = json.loads(arrivals)
 
-                next_day = self._journeys_date != datetime.now().astimezone(LOCAL).strftime("%A")
+            next_day = self._journeys_date != datetime.now().astimezone(LOCAL).strftime("%A")
 
-                self._journeys_modified = self.modify_journey_data(
-                    self._journeys, next_day
-                )
+            self.remove_stale_journeys()
+            #self._journeys_modified = self.modify_journey_data(
+            #    self._journeys, next_day
+            #)
 
-                if len(self._journeys_modified) < self.max_items:
-                    _LOGGER.info("Not enough timetable data")
-                    self._journeys_modified.clear()
-                    self._journeys.clear()
+            if len(self._journeys_modified) < self.max_items + len(arrivals):
+                _LOGGER.info("Not enough timetable data")
+                self._journeys_modified.clear()
+                self._journeys.clear()
 
-                    while True:
-                        journeys_url = NYSSE_JOURNEYS_URL.format(
-                            self.station_no, self._journeys_date, journeys_index
+                while True:
+                    journeys_url = NYSSE_JOURNEYS_URL.format(
+                        self.station_no, self._journeys_date, journeys_index
+                    )
+
+                    _LOGGER.info("Fetching timetable data for %s, from %s", self._journeys_date, journeys_url)
+                    journeys_data = await request(journeys_url)
+
+                    if not journeys_data:
+                        _LOGGER.error("Can't fetch timetables. Incorrect response from %s", journeys_url)
+                        self._state = "Cannot reach Nysse"
+                        return
+
+                    journeys_data_json = json.loads(journeys_data)
+
+                    self._journeys.append(journeys_data_json)
+
+                    if journeys_data_json["data"]["headers"]["paging"]["moreData"]:
+                        journeys_index += 100
+
+                    else:
+                        modified_journey_data = self.modify_journey_data(
+                            self._journeys, next_day
                         )
 
-                        _LOGGER.info("Fetching timetable data for %s, from %s", self._journeys_date, journeys_url)
-                        journeys_data = await request(journeys_url)
+                        for journey in modified_journey_data:
+                            self._journeys_modified.append(journey)
 
-                        if not journeys_data:
-                            _LOGGER.error("Can't fetch timetables. Incorrect response from %s", journeys_url)
-                            self._state = "Cannot reach Nysse"
-                            return
-
-                        journeys_data_json = json.loads(journeys_data)
-
-                        self._journeys.append(journeys_data_json)
-
-                        if journeys_data_json["data"]["headers"]["paging"]["moreData"]:
-                            journeys_index += 100
-
+                        if len(self._journeys_modified) < self.max_items:
+                            if next_day:
+                                _LOGGER.warning("Not enough timetable data was found. Reduce the amount of requested departures")
+                                return
+                            _LOGGER.info("Not enough timetable data remaining for today")
+                            self._journeys.clear()
+                            journeys_index = 0
+                            self._journeys_date = (
+                                datetime.now().astimezone(LOCAL) + timedelta(days=1)
+                            ).strftime("%A")
+                            next_day = True
                         else:
-                            modified_journey_data = self.modify_journey_data(
-                                self._journeys, next_day
-                            )
+                            break
 
-                            for journey in modified_journey_data:
-                                self._journeys_modified.append(journey)
+        except OSError:
+            _LOGGER.warning("Something broke")
+            self._state = "Cannot reach Nysse"
+            return
 
-                            if len(self._journeys_modified) < self.max_items:
-                                if next_day:
-                                    _LOGGER.warning("Not enough timetable data was found. Reduce the amount of requested departures")
-                                _LOGGER.info("Not enough timetable data remaining for today")
-                                self._journeys.clear()
-                                journeys_index = 0
-                                self._journeys_date = (
-                                    datetime.now().astimezone(LOCAL) + timedelta(days=1)
-                                ).strftime("%A")
-                                next_day = True
-                            else:
-                                break
+        self._nysse_data.remove_stale_data()
 
-            except OSError:
-                _LOGGER.warning("Something broke")
-                self._state = "Cannot reach Nysse"
-                return
-
-            self._nysse_data.populate(
-                arrivals, self._journeys_modified, self.station_no, self._stops
-            )
+        self._nysse_data.populate(
+            arrivals, self._journeys_modified, self.station_no, self._stops
+        )
 
         self._nysse_data.sort_data(self.max_items)
         self._state = self._nysse_data.get_state()

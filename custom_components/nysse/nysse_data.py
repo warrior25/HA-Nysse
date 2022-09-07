@@ -27,17 +27,14 @@ class NysseData:
 
         self._journey_data = journey_data
 
-    def is_data_stale(self):
+    def remove_stale_data(self):
         for item in self._api_json:
             if self.get_departure_time(item, True) == "unavailable":
-                #_LOGGER.log("Removing unavailable data")
+                _LOGGER.info("Removing unavailable departures")
                 self._api_json.remove(item)
-                break
-            if (self.get_departure_time(item, False)) < datetime.now().astimezone(LOCAL):
-                #_LOGGER.log("Removing stale data")
+            elif (self.get_departure_time(item, False)) < datetime.now().astimezone(LOCAL):
+                _LOGGER.info("Removing stale departures")
                 self._api_json.remove(item)
-                break
-        return True
 
     def sort_data(self, max_items):
         self._api_json = self._arrival_data[:max_items]
