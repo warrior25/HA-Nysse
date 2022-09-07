@@ -1,3 +1,4 @@
+from http.client import CannotSendRequest
 from typing import Any, Optional
 
 from homeassistant import config_entries
@@ -24,7 +25,11 @@ class NysseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: Optional[dict[str, Any]] = None):
         errors: dict[str, str] = {}
+
         stations = await fetch_stop_points(True)
+        if not stations:
+            return
+
         if user_input is not None:
             self.data[CONF_STOPS].append(
                 {

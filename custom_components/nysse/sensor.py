@@ -191,17 +191,13 @@ class NysseSensor(SensorEntity):
 
             if not arrivals:
                 _LOGGER.warning("Can't fetch arrivals. Incorrect response from %s", arrival_url)
-                _LOGGER.info(arrivals)
-                self._state = "Cannot reach Nysse"
+                arrivals = []
             else:
                 arrivals = json.loads(arrivals)
 
             next_day = self._journeys_date != datetime.now().astimezone(LOCAL).strftime("%A")
 
             self.remove_stale_journeys()
-            #self._journeys_modified = self.modify_journey_data(
-            #    self._journeys, next_day
-            #)
 
             if len(self._journeys_modified) < self.max_items + len(arrivals):
                 _LOGGER.info("Not enough timetable data")
@@ -218,7 +214,6 @@ class NysseSensor(SensorEntity):
 
                     if not journeys_data:
                         _LOGGER.error("Can't fetch timetables. Incorrect response from %s", journeys_url)
-                        self._state = "Cannot reach Nysse"
                         return
 
                     journeys_data_json = json.loads(journeys_data)
@@ -251,8 +246,7 @@ class NysseSensor(SensorEntity):
                             break
 
         except OSError:
-            _LOGGER.warning("Something broke")
-            self._state = "Cannot reach Nysse"
+            _LOGGER.warning("Unknown exception. Check your internet connection")
             return
 
         self._nysse_data.remove_stale_data()

@@ -1,3 +1,5 @@
+from asyncio import CancelledError
+from subprocess import TimeoutExpired
 import aiohttp
 import async_timeout
 

@@ -11,7 +11,9 @@ async def fetch_stop_points(has_id):
     if len(stations) == 0:
         try:
             result = await request(NYSSE_STOP_POINTS_URL)
-
+            if not result:
+                _LOGGER.warning("Could not fetch stop points")
+                return
             result = json.loads(result)
             for stop in result["body"]:
                 if has_id:
@@ -26,7 +28,7 @@ async def fetch_stop_points(has_id):
 
         except OSError:
             _LOGGER.warning(
-                "Can't fetch stop point data from %s", NYSSE_STOP_POINTS_URL
+                "Unknown exception. Check your internet connection"
             )
             return
     return stations
