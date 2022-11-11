@@ -109,6 +109,7 @@ class NysseSensor(SensorEntity):
         self.station_no = station
         self.max_items = int(maximum)
 
+        self._station_name = ""
         self._state = None
         self._destination = ""
         self._nysse_data = NysseData()
@@ -117,6 +118,7 @@ class NysseSensor(SensorEntity):
         self._journeys = []
         self._journeys_modified = []
         self._journeys_date = datetime.now().astimezone(LOCAL).strftime("%A")
+        self._skip_journey_lookup = False
 
     def modify_journey_data(self, journeys, next_day):
         journeys_data = []
@@ -160,8 +162,8 @@ class NysseSensor(SensorEntity):
 
     @property
     def name(self) -> str:
-        station = self._nysse_data.get_station_name()
-        return "{0} - {1} ({2})".format(self._platformname, station, self.station_no)
+        self._station_name = self._nysse_data.get_station_name()
+        return "{0} - {1} ({2})".format(self._platformname, self._station_name, self.station_no)
 
     #@property
     #def icon(self):
@@ -178,7 +180,7 @@ class NysseSensor(SensorEntity):
         This is the only method that should fetch new data for Home Assistant.
         """
         if len(self._stops) == 0:
-            _LOGGER.info("Fectching stop points")
+            _LOGGER.info("Fectching stops")
             self._stops = await fetch_stop_points(False)
 
         journeys_index = 0
@@ -186,34 +188,38 @@ class NysseSensor(SensorEntity):
         arrival_url = NYSSE_STOP_URL.format(self.station_no)
 
         try:
-            _LOGGER.info("Fectching arrivals from %s", arrival_url)
-            arrivals = await request(arrival_url)
+            _LOGGER.info("%s: Fectching departures from %s", self.station_no, arrival_url)
+            departures = await request(arrival_url)
 
-            if not arrivals:
-                _LOGGER.warning("Can't fetch arrivals. Incorrect response from %s", arrival_url)
-                arrivals = []
+            if not departures:
+                _LOGGER.warning("Can't fetch departures for station %s. Incorrect response from %s", self.station_no, arrival_url)
+                departures = []
             else:
-                arrivals = json.loads(arrivals)
+                departures = json.loads(departures)
 
-            next_day = self._journeys_date != datetime.now().astimezone(LOCAL).strftime("%A")
+            if self._journeys_date == datetime.now().astimezone(LOCAL).strftime("%A"):
+                next_day = False
+                self._skip_journey_lookup = False
 
             self.remove_stale_journeys()
 
-            if len(self._journeys_modified) < self.max_items + len(arrivals):
-                _LOGGER.info("Not enough timetable data")
+            if (len(self._journeys_modified) < self.max_items) and (not self._skip_journey_lookup):
                 self._journeys_modified.clear()
                 self._journeys.clear()
 
                 while True:
+                    if self._skip_journey_lookup:
+                        break
+
                     journeys_url = NYSSE_JOURNEYS_URL.format(
                         self.station_no, self._journeys_date, journeys_index
                     )
 
-                    _LOGGER.info("Fetching timetable data for %s, from %s", self._journeys_date, journeys_url)
+                    _LOGGER.info("%s: Fetching timetable data from %s", self.station_no, journeys_url)
                     journeys_data = await request(journeys_url)
 
                     if not journeys_data:
-                        _LOGGER.error("Can't fetch timetables. Incorrect response from %s", journeys_url)
+                        _LOGGER.error("%s: Can't fetch timetables. Incorrect response from %s", self.station_no, journeys_url)
                         return
 
                     journeys_data_json = json.loads(journeys_data)
@@ -227,15 +233,15 @@ class NysseSensor(SensorEntity):
                         modified_journey_data = self.modify_journey_data(
                             self._journeys, next_day
                         )
-
                         for journey in modified_journey_data:
                             self._journeys_modified.append(journey)
 
                         if len(self._journeys_modified) < self.max_items:
                             if next_day:
-                                _LOGGER.warning("Not enough timetable data was found. Reduce the amount of requested departures")
-                                return
-                            _LOGGER.info("Not enough timetable data remaining for today")
+                                self._skip_journey_lookup = True
+                                _LOGGER.info("%s: Not enough timetable data was found. Aborting further timetable lookup until the next day", self.station_no)
+                                break
+                            _LOGGER.info("%s: Not enough timetable data remaining today", self.station_no)
                             self._journeys.clear()
                             journeys_index = 0
                             self._journeys_date = (
@@ -252,10 +258,9 @@ class NysseSensor(SensorEntity):
         self._nysse_data.remove_stale_data()
 
         self._nysse_data.populate(
-            arrivals, self._journeys_modified, self.station_no, self._stops
+            departures, self._journeys_modified, self.station_no, self._stops, self.max_items
         )
 
-        self._nysse_data.sort_data(self.max_items)
         self._state = self._nysse_data.get_state()
         self._departures = self._nysse_data.get_departures()
 
@@ -264,11 +269,9 @@ class NysseSensor(SensorEntity):
         attributes = {}
         attributes["last_refresh"] = self._nysse_data.get_last_update()
 
-        if self._nysse_data.is_empty():
-            return attributes
-
-        attributes["departures"] = self._departures
-        self._destination = self._departures[0]["destination"]
-        attributes["station_name"] = self._nysse_data.get_station_name()
+        if len(self._departures) != 0:
+            attributes["departures"] = self._departures
+            self._destination = self._departures[0]["destination"]
+            attributes["station_name"] = self._station_name
 
         return attributes

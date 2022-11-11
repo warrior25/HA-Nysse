@@ -9,73 +9,81 @@ _LOGGER = logging.getLogger(__name__)
 
 class NysseData:
     def __init__(self):
-        self._arrival_data = []
-        self._journey_data = []
+        # Last update timestamp for the sensor
         self._last_update = None
-        self._api_json = []
-        self._station_name = ""
-        self._station = ""
+
+        # Variable to store all fetched data
+        self._json_data = []
+
+        self._station_id = ""
         self._stops = []
 
-    def populate(self, arrival_data, journey_data, station_no, stop_points):
-        self._station = station_no
-        self._stops = stop_points
+    def populate(self, departures, journeys, station_id, stops, max_items):
+        """Collect sensor data to corresponding variables."""
+        departures2 = []
+        self._station_id = station_id
+        self._stops = stops
         self._last_update = datetime.now().astimezone(LOCAL)
 
-        if self._station in arrival_data["body"]:
-            self._arrival_data = arrival_data["body"][self._station]
+        if self._station_id in departures["body"]:
+            departures2 = departures["body"][self._station_id]
 
-        self._journey_data = journey_data
+        # Store realtime arrival data
+        self._json_data = departures2[:max_items]
+
+        # Append static timetable data if not enough realtime data
+        if len(self._json_data) < max_items:
+            for i in range(len(self._json_data), max_items):
+                if len(journeys) > i:
+                    self._json_data.append(journeys[i])
 
     def remove_stale_data(self):
-        for item in self._api_json:
+        """Remove old or unavailable departures."""
+        for item in self._json_data:
             if self.get_departure_time(item, True) == "unavailable":
                 _LOGGER.info("Removing unavailable departures")
-                self._api_json.remove(item)
+                self._json_data.remove(item)
+
             elif (self.get_departure_time(item, False)) < datetime.now().astimezone(LOCAL):
                 _LOGGER.info("Removing stale departures")
-                self._api_json.remove(item)
-
-    def sort_data(self, max_items):
-        self._api_json = self._arrival_data[:max_items]
-        #_LOGGER.warning("self._journey_data:\n %s", self._journey_data)
-        if len(self._api_json) < max_items:
-            for i in range(len(self._api_json), max_items):
-                self._api_json.append(self._journey_data[i])
-        #_LOGGER.info("self._api_json:\n %s", self._api_json)
+                self._json_data.remove(item)
 
     def get_state(self):
-        if len(self._api_json) > 0:
-            depart_time = self.get_departure_time(self._api_json[0], True)
+        """Get next departure time as the sensor state."""
+        if len(self._json_data) > 0:
+            depart_time = self.get_departure_time(self._json_data[0], True)
             if depart_time != "unavailable":
                 return parser.parse(depart_time).strftime("%H:%M")
 
-    def is_empty(self):
-        return len(self._api_json) == 0
-
     def get_departures(self):
+        """Format departure data to show in sensor attributes."""
         departures = []
-        for item in self._api_json:
+        for item in self._json_data:
             departure = {
-                "destination": self.get_destination(item),
+                "destination": self.get_destination_name(item),
                 "line": item["lineRef"],
                 "departure": self.get_departure_time(item, True),
-                "time_to_station": self.time_to_station(item, False, "{0}"),
+                "time_to_station": self.time_to_station(item),
                 "icon": self.get_line_icon(item["lineRef"]),
                 "realtime": self.is_realtime(item),
             }
+
+            # Append only valid departures
             if departure["time_to_station"] != "unavailable":
                 departures.append(departure)
 
+        # Sort departures according to their departure times
         departures = sorted(departures, key=lambda d: d['time_to_station'])
         return departures
 
     def is_realtime(self, item):
+        """Check if departure data is from realtime data source"""
         if "non-realtime" in item:
             return False
         return True
 
     def get_departure_time(self, item, stringify):
+        """Get departure time from json data"""
         if "expectedArrivalTime" in item["call"]:
             parsed = parser.parse(item["call"]["expectedArrivalTime"])
             if stringify:
@@ -97,27 +105,24 @@ class NysseData:
         return "mdi:bus"
 
     def get_station_name(self):
-        if len(self._station_name) == 0:
-            self._station_name = self._stops[self._station]
-        return self._station_name
+        return self._stops[self._station_id]
 
     def get_last_update(self):
         return self._last_update
 
-    def get_destination(self, entry):
+    def get_destination_name(self, entry):
         if "destinationShortName" in entry:
             return self._stops[entry["destinationShortName"]]
-        return ""
+        return "unavailable"
 
-    def time_to_station(self, entry, with_destination=True, style="{0}m {1}s"):
+    def time_to_station(self, entry):
+        """Get time until departure in minutes"""
         time = self.get_departure_time(entry, True)
         if time != "unavailable":
+            # Convert departure time to UTC
             naive = parser.parse(self.get_departure_time(entry, True)).replace(tzinfo=None)
             local_dt = LOCAL.localize(naive, is_dst=None)
             utc_dt = local_dt.astimezone(pytz.utc)
             next_departure_time = (utc_dt - datetime.now().astimezone(pytz.utc)).seconds
-            next_departure_dest = self.get_destination(entry)
-            return int(style.format(
-                int(next_departure_time / 60), int(next_departure_time % 60)
-            ) + (" to " + next_departure_dest if with_destination else ""))
+            return int(next_departure_time / 60)
         return "unavailable"

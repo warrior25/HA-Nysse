@@ -1,6 +1,4 @@
-from http.client import CannotSendRequest
 from typing import Any, Optional
-
 from homeassistant import config_entries
 from .fetch_stop_points import fetch_stop_points
 import homeassistant.helpers.config_validation as cv
@@ -37,12 +35,13 @@ class NysseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "max": user_input[CONF_MAX],
                 }
             )
+
             # If user ticked the box show this form again so they can add an
             # additional station.
-
             if user_input.get("add_another", True):
                 return await self.async_step_user()
 
+            # Show "Many stations" as the configuration name if it contains multiple stations
             if len(self.data[CONF_STOPS]) > 1:
                 return self.async_create_entry(title="Many stations", data=self.data)
 

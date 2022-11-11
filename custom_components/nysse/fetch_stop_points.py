@@ -7,6 +7,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def fetch_stop_points(has_id):
+    """Fetches stop point names """
     stations = {}
     if len(stations) == 0:
         try:
