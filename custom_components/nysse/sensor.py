@@ -32,7 +32,7 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-SCAN_INTERVAL = timedelta(minutes=1)
+SCAN_INTERVAL = timedelta(seconds=30)
 
 CONFIG_STOP = vol.Schema(
     {
@@ -114,16 +114,36 @@ class NysseSensor(SensorEntity):
         self._departures = []
         self._stops = []
         self._journeys = {}
+        self._live_data = []
 
         self._current_weekday_int = -1
 
-    def remove_stale_journeys(self):
+    def remove_stale_data(self):
         journeys_to_remove = []
+        departures_to_remove = []
+
         for journey in self._journeys[self._current_weekday_int]:
-            if (parser.parse(journey["call"]["expectedArrivalTime"])) < (datetime.now().astimezone(LOCAL_TZ)):
+            if parser.parse(journey["call"]["expectedArrivalTime"]) < datetime.now().astimezone(LOCAL_TZ):
                 journeys_to_remove.append(journey)
-        for journey in journeys_to_remove:
-            self._journeys[self._current_weekday_int].remove(journey)
+
+        for item in self._live_data["body"][self.station_no]:
+            for journey in self._journeys[self._current_weekday_int]:
+
+                if parser.parse(journey["call"]["expectedArrivalTime"]) == self._nysse_data.get_departure_time(item, False, "aimedArrival") and journey not in journeys_to_remove:
+                    journeys_to_remove.append(journey)
+
+                if self._nysse_data.time_to_station(item, True) < 0:
+                    departures_to_remove.append(item)
+
+        if len(journeys_to_remove) > 0:
+            _LOGGER.info("%s: Removing %s stale journeys", self.station_no, len(journeys_to_remove))
+        for journey1 in journeys_to_remove:
+            self._journeys[self._current_weekday_int].remove(journey1)
+
+        if len(departures_to_remove) > 0:
+            _LOGGER.info("%s: Removing %s stale departures", self.station_no, len(departures_to_remove))
+        for item in departures_to_remove:
+            self._live_data["body"][self.station_no].remove(item)
 
     async def fetch_stops(self):
         if len(self._stops) == 0:
@@ -174,13 +194,13 @@ class NysseSensor(SensorEntity):
 
         try:
             _LOGGER.info("%s: Fectching departures from %s", self.station_no, departure_url)
-            departures = await request(departure_url)
+            self._live_data = await request(departure_url)
 
-            if not departures:
+            if not self._live_data:
                 _LOGGER.warning("%s: Can't fetch departures. Incorrect response from %s", self.station_no, departure_url)
-                departures = []
+                self._live_data = []
             else:
-                departures = json.loads(departures)
+                self._live_data = json.loads(self._live_data)
 
             total_journeys_left = 0
             if len(self._journeys) == 7:
@@ -226,15 +246,14 @@ class NysseSensor(SensorEntity):
                             break
 
         except OSError:
-            _LOGGER.warning("%s: Unknown exception. Check your internet connection", self.station_no)
+            _LOGGER.error("%s: Unknown exception. Check your internet connection", self.station_no)
             return
 
-        self._nysse_data.remove_stale_data()
-        self.remove_stale_journeys()
+        self.remove_stale_data()
 
         _LOGGER.info("%s: Data fetching complete. Populating sensor with data", self.station_no)
         self._nysse_data.populate(
-            departures, self._journeys, self.station_no, self._stops, self.max_items
+            self._live_data, self._journeys, self.station_no, self._stops, self.max_items
         )
 
         self._state = self._nysse_data.get_state()

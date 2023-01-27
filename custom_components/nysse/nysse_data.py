@@ -33,7 +33,7 @@ class NysseData:
 
         # Append static timetable data if not enough realtime data
         weekday_int = datetime.today().weekday()
-        i = len(self._json_data)
+        i = 0
 
         while len(self._json_data) < max_items:
             if len(journeys[weekday_int]) <= i:
@@ -48,15 +48,6 @@ class NysseData:
             else:
                 self._json_data.append(journeys[weekday_int][i])
                 i += 1
-
-    def remove_stale_data(self):
-        """Remove old or unavailable departures."""
-        stale_data = []
-        for item in self._json_data:
-            if (self.get_departure_time(item) == "unavailable") or ((self.get_departure_time(item)) < datetime.now().astimezone(LOCAL_TZ)):
-                stale_data.append(item)
-        for item in stale_data:
-            self._json_data.remove(item)
 
     def get_state(self):
         """Get next departure time as the sensor state."""
@@ -81,6 +72,9 @@ class NysseData:
             # Append only valid departures
             if departure["time_to_station"] != "unavailable":
                 departures.append(departure)
+            else:
+                _LOGGER.info("Discarding departure with unavailable time_to_station")
+                _LOGGER.info(departure)
 
         # Sort departures according to their departure times
         departures = sorted(departures, key=lambda d: d['time_to_station'])
@@ -92,20 +86,25 @@ class NysseData:
             return False
         return True
 
-    def get_departure_time(self, item, stringify = False):
+    def get_departure_time(self, item, stringify = False, time_type = "any"):
         """Get departure time from json data"""
-        if "expectedArrivalTime" in item["call"]:
+        if "expectedArrivalTime" in item["call"] and time_type == "any":
             parsed = parser.parse(item["call"]["expectedArrivalTime"])
-            if stringify:
-                return parsed.strftime("%H:%M")
-            return parsed
-        if "aimedArrivalTime" in item["call"]:
-            parsed = parser.parse(item["call"]["aimedArrivalTime"]).strftime("%H:%M")
-            if stringify:
-                return parsed.strftime("%H:%M")
-            return parsed
-        else:
+        elif "expectedDepartureTime" in item["call"] and time_type == "any":
+            parsed = parser.parse(item["call"]["expectedDepartureTime"])
+        elif "aimedArrivalTime" in item["call"] and (time_type in ("any", "aimedArrival")):
+            parsed = parser.parse(item["call"]["aimedArrivalTime"])
+        elif "aimedDepartureTime" in item["call"] and time_type == "any":
+            parsed = parser.parse(item["call"]["aimedDepartureTime"])
+
+        try:
+            parsed
+        except NameError:
             return "unavailable"
+        else:
+            if stringify:
+                return parsed.strftime("%H:%M")
+            return parsed
 
     def get_line_icon(self, line_no):
         if line_no in (TRAM_LINES):
@@ -123,14 +122,15 @@ class NysseData:
             return self._stops[entry["destinationShortName"]]
         return "unavailable"
 
-    def time_to_station(self, entry):
+    def time_to_station(self, entry, seconds = False):
         """Get time until departure in minutes"""
-        time = self.get_departure_time(entry, True)
+        time = self.get_departure_time(entry, False)
         if time != "unavailable":
-            # Convert departure time to UTC
-            naive = parser.parse(self.get_departure_time(entry, True)).replace(tzinfo=None)
-            local_dt = LOCAL_TZ.localize(naive, is_dst=None)
-            utc_dt = local_dt.astimezone(pytz.utc)
-            next_departure_time = (utc_dt - datetime.now().astimezone(pytz.utc)).seconds
+            next_departure_time = (time - datetime.now().astimezone(LOCAL_TZ)).seconds
+
+            if seconds:
+                return next_departure_time
+
             return int(next_departure_time / 60)
+
         return "unavailable"
