@@ -126,14 +126,15 @@ class NysseSensor(SensorEntity):
             if parser.parse(journey["call"]["expectedArrivalTime"]) < datetime.now().astimezone(LOCAL_TZ):
                 journeys_to_remove.append(journey)
 
-        for item in self._live_data["body"][self.station_no]:
-            for journey in self._journeys[self._current_weekday_int]:
+        if self.station_no in self._live_data["body"]:
+            for item in self._live_data["body"][self.station_no]:
+                for journey in self._journeys[self._current_weekday_int]:
 
-                if parser.parse(journey["call"]["expectedArrivalTime"]) == self._nysse_data.get_departure_time(item, False, "aimedArrival") and journey not in journeys_to_remove:
-                    journeys_to_remove.append(journey)
+                    if parser.parse(journey["call"]["expectedArrivalTime"]) == self._nysse_data.get_departure_time(item, False, "aimedArrival") and journey not in journeys_to_remove:
+                        journeys_to_remove.append(journey)
 
-                if self._nysse_data.time_to_station(item, True) < 0:
-                    departures_to_remove.append(item)
+                    if self._nysse_data.time_to_station(item, True) < 0:
+                        departures_to_remove.append(item)
 
         if len(journeys_to_remove) > 0:
             _LOGGER.info("%s: Removing %s stale journeys", self.station_no, len(journeys_to_remove))
