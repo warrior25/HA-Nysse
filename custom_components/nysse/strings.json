@@ -7,7 +7,8 @@
       "user": {
         "data": {
           "station": "Station",
-          "add_another": "Add another station?"
+          "add_another": "Add another station?",
+          "timelimit": "Minimum time to departure"
         },
         "description": "Enter the station and line you would like to follow.",
         "title": "Nysse Tampere"

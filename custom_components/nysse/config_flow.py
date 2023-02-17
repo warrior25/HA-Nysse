@@ -9,6 +9,8 @@ from .const import (
     CONF_STATION,
     CONF_MAX,
     DEFAULT_MAX,
+    CONF_TIMELIMIT,
+    DEFAULT_TIMELIMIT,
     DOMAIN,
 )
 
@@ -33,6 +35,7 @@ class NysseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 {
                     "station": user_input[CONF_STATION],
                     "max": user_input[CONF_MAX],
+                    "timelimit": user_input[CONF_TIMELIMIT],
                 }
             )
 
@@ -54,6 +57,9 @@ class NysseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_STATION): vol.In(stations),
+                    vol.Optional(
+                        CONF_TIMELIMIT, default=DEFAULT_TIMELIMIT
+                    ): cv.positive_int,
                     vol.Optional(CONF_MAX, default=DEFAULT_MAX): cv.positive_int,
                     vol.Optional("add_another", default=False): cv.boolean,
                 }
