@@ -5,12 +5,10 @@ from dateutil import parser
 import logging
 import json
 import pytz
-import voluptuous as vol
-import homeassistant.helpers.config_validation as cv
 from datetime import timedelta, datetime
 import time
 from homeassistant import config_entries, core
-from homeassistant.components.sensor import SensorEntity, PLATFORM_SCHEMA
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
@@ -20,12 +18,10 @@ from .nysse_data import NysseData
 from .fetch_stop_points import fetch_stop_points
 from .const import (
     CONF_STOPS,
-    CONF_STATION,
-    CONF_MAX,
     DEFAULT_MAX,
     DEFAULT_ICON,
-    CONF_TIMELIMIT,
     DEFAULT_TIMELIMIT,
+    DEFAULT_LINES,
     PLATFORM_NAME,
     DOMAIN,
     NYSSE_JOURNEYS_URL,
@@ -35,20 +31,6 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
-
-CONFIG_STOP = vol.Schema(
-    {
-        vol.Required(CONF_STATION): cv.string,
-        vol.Optional(CONF_MAX, default=DEFAULT_MAX): cv.positive_int,
-        vol.Optional(CONF_TIMELIMIT, default=DEFAULT_TIMELIMIT): cv.positive_int,
-    }
-)
-
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {
-        vol.Required(CONF_STOPS): vol.All(cv.ensure_list, [CONFIG_STOP]),
-    }
-)
 
 LOCAL_TZ = pytz.timezone("Europe/Helsinki")
 
@@ -71,6 +53,7 @@ async def async_setup_entry(
                     stop["station"],
                     stop["max"] if "max" in stop else DEFAULT_MAX,
                     stop["timelimit"] if "timelimit" in stop else DEFAULT_TIMELIMIT,
+                    stop["lines"] if "lines" in stop else DEFAULT_LINES,
                 )
             )
 
@@ -91,7 +74,11 @@ async def async_setup_platform(
         if stop["station"] is not None:
             sensors.append(
                 NysseSensor(
-                    PLATFORM_NAME, stop["station"], stop["max"], stop["timelimit"]
+                    PLATFORM_NAME,
+                    stop["station"],
+                    stop["max"],
+                    stop["timelimit"],
+                    stop["lines"],
                 )
             )
 
@@ -101,7 +88,7 @@ async def async_setup_platform(
 class NysseSensor(SensorEntity):
     """Representation of a Sensor."""
 
-    def __init__(self, name, station, maximum, timelimit):
+    def __init__(self, name, station, maximum, timelimit, lines):
         """Initialize the sensor."""
 
         # Defaults to Nysse
@@ -110,6 +97,7 @@ class NysseSensor(SensorEntity):
         self.station_no = station
         self.max_items = int(maximum)
         self.timelimit = int(timelimit)
+        self.lines = [line.strip() for line in lines.split(",")]
 
         self._station_name = ""
         self._state = None
@@ -123,14 +111,24 @@ class NysseSensor(SensorEntity):
         self._current_weekday_int = -1
 
     def remove_stale_data(self):
+        removed_journey_count = 0
         journeys_to_remove = []
         departures_to_remove = []
 
-        for journey in self._journeys[self._current_weekday_int]:
-            if parser.parse(
-                journey["call"]["expectedArrivalTime"]
-            ) < datetime.now().astimezone(LOCAL_TZ) + timedelta(minutes=self.timelimit):
-                journeys_to_remove.append(journey)
+        for weekday in range(0, 7):
+            for journey in self._journeys[weekday]:
+                if parser.parse(
+                    journey["call"]["expectedArrivalTime"]
+                ) < datetime.now().astimezone(LOCAL_TZ) + timedelta(
+                    minutes=self.timelimit
+                ) or (
+                    journey["lineRef"] not in self.lines and self.lines[0] != "all"
+                ):
+                    journeys_to_remove.append(journey)
+            for journey1 in journeys_to_remove:
+                removed_journey_count += 1
+                self._journeys[weekday].remove(journey1)
+            journeys_to_remove.clear()
 
         if self.station_no in self._live_data["body"]:
             for item in self._live_data["body"][self.station_no]:
@@ -144,30 +142,30 @@ class NysseSensor(SensorEntity):
                     ):
                         journeys_to_remove.append(journey)
 
-                    if (
-                        self._nysse_data.time_to_station(item, True)
-                        < (self.timelimit * 60)
-                        and item not in departures_to_remove
-                    ):
-                        departures_to_remove.append(item)
+                if (
+                    self._nysse_data.time_to_station(item, True) < (self.timelimit * 60)
+                ) or (item["lineRef"] not in self.lines and self.lines[0] != "all"):
+                    departures_to_remove.append(item)
 
-        if len(journeys_to_remove) > 0:
-            _LOGGER.info(
-                "%s: Removing %s stale journeys",
-                self.station_no,
-                len(journeys_to_remove),
-            )
         for journey1 in journeys_to_remove:
+            removed_journey_count += 1
             self._journeys[self._current_weekday_int].remove(journey1)
+
+        if removed_journey_count > 0:
+            _LOGGER.info(
+                "%s: Removed %s stale or unwanted journeys",
+                self.station_no,
+                removed_journey_count,
+            )
 
         if len(departures_to_remove) > 0:
             _LOGGER.info(
-                "%s: Removing %s stale departures",
+                "%s: Removing %s stale or unwanted departures",
                 self.station_no,
                 len(departures_to_remove),
             )
-        for item in departures_to_remove:
-            self._live_data["body"][self.station_no].remove(item)
+            for item in departures_to_remove:
+                self._live_data["body"][self.station_no].remove(item)
 
     async def fetch_stops(self):
         if len(self._stops) == 0:

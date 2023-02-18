@@ -1,17 +1,19 @@
 {
   "config": {
     "error": {
-        "test" : "Test error."
+      "request": "Failed to connect to Nysse servers to retrieve data.",
+      "invalid_station": "Invalid station"
     },
     "step": {
       "user": {
+        "title": "Nysse Tampere",
+        "description": "Enter the station and line you would like to follow.",
         "data": {
           "station": "Station",
-          "add_another": "Add another station?",
-          "timelimit": "Minimum time to departure"
-        },
-        "description": "Enter the station and line you would like to follow.",
-        "title": "Nysse Tampere"
+          "max": "Number of departures to report",
+          "timelimit": "Minimum time to departure",
+          "lines": "Lines to show (separated by comma)"
+        }
       }
     }
   },

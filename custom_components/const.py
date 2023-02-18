@@ -8,6 +8,8 @@ CONF_TIMELIMIT = "timelimit"
 DEFAULT_TIMELIMIT = 0
 CONF_MAX = "max"
 DEFAULT_MAX = 3
+CONF_LINES = "lines"
+DEFAULT_LINES = "all"
 DEFAULT_ICON = "mdi:bus-clock"
 TRAM_LINES = ["1", "3"]
 

@@ -1,0 +1,20 @@
+{
+  "config": {
+    "error": {
+      "request": "Yhteys Nysse-palvelimiin epäonnistui.",
+      "invalid_station": "Virheellinen pysäkki"
+    },
+    "step": {
+      "user": {
+        "title": "Nysse Tampere",
+        "description": "Syötä seurattava pysäkki.",
+        "data": {
+          "station": "Pysäkki",
+          "max": "Näytettävien lähtöjen määrä",
+          "timelimit": "Vähimmäisaika lähtöön",
+          "lines": "Linjat, jotka näytetään (pilkulla erotettuina)"
+        }
+      }
+    }
+  }
+}
