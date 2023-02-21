@@ -1,18 +1,42 @@
 {
   "config": {
     "error": {
-      "request": "Failed to connect to Nysse servers to retrieve data.",
-      "invalid_station": "Invalid station"
+      "request": "Failed to connect to Nysse servers to retrieve data",
+      "invalid_station": "Invalid station",
+      "invalid_lines": "Select at least one line"
+    },
+    "abort": {
+      "already_configured": "Stop is already configured"
     },
     "step": {
       "user": {
         "title": "Nysse Tampere",
-        "description": "Enter the station you would like to follow.",
+        "description": "Enter the station you would like to follow",
         "data": {
-          "station": "Station",
+          "station": "Station"
+        }
+      },
+      "options": {
+        "title": "Nysse Tampere",
+        "description": "Options for the station to follow",
+        "data": {
           "max": "Number of departures to report",
           "timelimit": "Minimum time to departure",
-          "lines": "Lines to show (separated by comma)"
+          "lines": "Lines to show"
+        }
+      }
+    }
+  },
+  "options": {
+    "error": {
+      "invalid_path": "The path provided is not valid. Should be in the format `user/repo-name` and should be a valid github repository."
+    },
+    "step": {
+      "init": {
+        "title": "Stop options",
+        "data": {
+          "max": "Number of departures to report",
+          "timelimit": "Minimum time to departure"
         }
       }
     }

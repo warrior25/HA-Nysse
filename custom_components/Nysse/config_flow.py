@@ -1,18 +1,19 @@
 from typing import Any, Optional
 from homeassistant import config_entries
-from .fetch_stop_points import fetch_stop_points
+from .fetch_api import fetch_stop_points, fetch_lines
 from homeassistant.helpers.selector import selector
+import homeassistant.helpers.config_validation as cv
+from homeassistant.core import callback
 import voluptuous as vol
+import logging
 
 from .const import (
-    CONF_STOPS,
     CONF_STATION,
     CONF_MAX,
     DEFAULT_MAX,
     CONF_TIMELIMIT,
     DEFAULT_TIMELIMIT,
     CONF_LINES,
-    DEFAULT_LINES,
     DOMAIN,
 )
 
@@ -23,26 +24,56 @@ class NysseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         """Initialize."""
-        self.data: dict[str, Any] = {CONF_STOPS: []}
+        self.data: dict[str, Any] = {}
+        self.stations = []
+        self.title = "Nysse"
 
     async def async_step_user(self, user_input: Optional[dict[str, Any]] = None):
         errors: dict[str, str] = {}
 
-        stations = await fetch_stop_points(True)
-        if not stations:
-            return
-
+        self.stations = await fetch_stop_points(True)
         data_schema = {
             vol.Required(CONF_STATION): selector(
                 {
                     "select": {
-                        "options": stations,
+                        "options": self.stations,
                         "mode": "dropdown",
                         "custom_value": "true",
                     }
                 }
-            ),
-            vol.Optional(CONF_LINES, default=DEFAULT_LINES): str,
+            )
+        }
+
+        if user_input is not None:
+            try:
+                await self.validate_stop(user_input[CONF_STATION])
+            except ValueError:
+                errors[CONF_STATION] = "invalid_station"
+
+            if not errors:
+                await self.async_set_unique_id(user_input[CONF_STATION])
+                self._abort_if_unique_id_configured()
+                self.data[CONF_STATION] = user_input[CONF_STATION]
+
+                for station in self.stations:
+                    if station["value"] == user_input[CONF_STATION]:
+                        self.title = station["label"]
+                        break
+
+                return await self.async_step_options()
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema(data_schema),
+            errors=errors,
+        )
+
+    async def async_step_options(self, user_input: Optional[dict[str, Any]] = None):
+        errors: dict[str, str] = {}
+
+        lines = await fetch_lines(self.data[CONF_STATION])
+        options_schema = {
+            vol.Required(CONF_LINES): cv.multi_select(lines),
             vol.Optional(CONF_TIMELIMIT, default=DEFAULT_TIMELIMIT): selector(
                 {
                     "number": {
@@ -56,39 +87,117 @@ class NysseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 {"number": {"min": 1, "max": 30}}
             ),
         }
-
         if user_input is not None:
             try:
-                await self.validate_stop(user_input[CONF_STATION], stations)
+                await self.validate_lines(user_input[CONF_LINES])
             except ValueError:
-                errors[CONF_STATION] = "invalid_station"
-
+                errors[CONF_LINES] = "invalid_lines"
             if not errors:
-                self.data[CONF_STOPS].append(
-                    {
-                        "station": user_input[CONF_STATION],
-                        "max": user_input[CONF_MAX],
-                        "timelimit": user_input[CONF_TIMELIMIT],
-                        "lines": user_input[CONF_LINES],
-                    }
-                )
-                integration_title = "Nysse"
-
-                for station in stations:
-                    if station["value"] == user_input[CONF_STATION]:
-                        integration_title = station["label"]
-                        break
-
-                return self.async_create_entry(title=integration_title, data=self.data)
+                self.data = {
+                    "station": self.data[CONF_STATION],
+                    "lines": user_input[CONF_LINES],
+                    "timelimit": user_input[CONF_TIMELIMIT],
+                    "max": user_input[CONF_MAX],
+                }
+                return self.async_create_entry(title=self.title, data=self.data)
 
         return self.async_show_form(
-            step_id="user",
-            data_schema=vol.Schema(data_schema),
+            step_id="options",
+            data_schema=vol.Schema(options_schema),
             errors=errors,
         )
 
-    async def validate_stop(self, stop_id, stations):
-        for station in stations:
+    async def validate_stop(self, stop_id):
+        for station in self.stations:
             if station["value"] == stop_id:
                 return
         raise ValueError
+
+    async def validate_lines(self, lines):
+        if len(lines) < 1:
+            raise ValueError
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> config_entries.OptionsFlow:
+        """Create the options flow."""
+        return OptionsFlowHandler(config_entry)
+
+
+class OptionsFlowHandler(config_entries.OptionsFlow):
+    """Handles options flow for the component."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        self.config_entry = config_entry
+        self.data: dict[str, Any] = {}
+        self.title = ""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] = None
+    ) -> dict[str, Any]:
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            print(user_input)
+            self.stations = await fetch_stop_points(True)
+            for station in self.stations:
+                if station["value"] == self.config_entry.data[CONF_STATION]:
+                    self.title = station["label"]
+                    break
+
+            self.data = {
+                "station": self.config_entry.data[CONF_STATION],
+                "lines": self.config_entry.data[CONF_LINES],
+                "timelimit": user_input[CONF_TIMELIMIT],
+                "max": user_input[CONF_MAX],
+            }
+            return self.async_create_entry(title="", data=self.data)
+
+        if self.config_entry.options:
+            options_schema = vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_TIMELIMIT,
+                        default=self.config_entry.options[CONF_TIMELIMIT],
+                    ): selector(
+                        {
+                            "number": {
+                                "min": 0,
+                                "max": 60,
+                                "unit_of_measurement": "min",
+                            }
+                        }
+                    ),
+                    vol.Optional(
+                        CONF_MAX, default=self.config_entry.options[CONF_MAX]
+                    ): selector({"number": {"min": 1, "max": 30}}),
+                }
+            )
+        else:
+            options_schema = vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_TIMELIMIT,
+                        default=self.config_entry.data[CONF_TIMELIMIT],
+                    ): selector(
+                        {
+                            "number": {
+                                "min": 0,
+                                "max": 60,
+                                "unit_of_measurement": "min",
+                            }
+                        }
+                    ),
+                    vol.Optional(
+                        CONF_MAX, default=self.config_entry.data[CONF_MAX]
+                    ): selector({"number": {"min": 1, "max": 30}}),
+                }
+            )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=options_schema,
+            errors=errors,
+        )

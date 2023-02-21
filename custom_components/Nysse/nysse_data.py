@@ -7,6 +7,7 @@ from .const import TRAM_LINES
 _LOGGER = logging.getLogger(__name__)
 LOCAL_TZ = pytz.timezone("Europe/Helsinki")
 
+
 class NysseData:
     def __init__(self):
         # Last update timestamp for the sensor
@@ -38,12 +39,15 @@ class NysseData:
         while len(self._json_data) < max_items:
             if len(journeys[weekday_int]) <= i:
                 i = 0
-                if (weekday_int < 6):
+                if weekday_int < 6:
                     weekday_int += 1
                 else:
                     weekday_int = 0
                 if weekday_int == datetime.today().weekday():
-                    _LOGGER.warning("%s: Not enough timetable data was found. Try decreasing the number of requested departures", station_id)
+                    _LOGGER.warning(
+                        "%s: Not enough timetable data was found. Try decreasing the number of requested departures",
+                        station_id,
+                    )
                     break
             else:
                 self._json_data.append(journeys[weekday_int][i])
@@ -73,11 +77,11 @@ class NysseData:
             if departure["time_to_station"] != "unavailable":
                 departures.append(departure)
             else:
-                _LOGGER.info("Discarding departure with unavailable time_to_station")
-                _LOGGER.info(departure)
+                _LOGGER.debug("Discarding departure with unavailable time_to_station")
+                _LOGGER.debug(departure)
 
         # Sort departures according to their departure times
-        departures = sorted(departures, key=lambda d: d['time_to_station'])
+        departures = sorted(departures, key=lambda d: d["time_to_station"])
         return departures
 
     def is_realtime(self, item):
@@ -86,13 +90,15 @@ class NysseData:
             return False
         return True
 
-    def get_departure_time(self, item, stringify = False, time_type = "any"):
+    def get_departure_time(self, item, stringify=False, time_type="any"):
         """Get departure time from json data"""
         if "expectedArrivalTime" in item["call"] and time_type == "any":
             parsed = parser.parse(item["call"]["expectedArrivalTime"])
         elif "expectedDepartureTime" in item["call"] and time_type == "any":
             parsed = parser.parse(item["call"]["expectedDepartureTime"])
-        elif "aimedArrivalTime" in item["call"] and (time_type in ("any", "aimedArrival")):
+        elif "aimedArrivalTime" in item["call"] and (
+            time_type in ("any", "aimedArrival")
+        ):
             parsed = parser.parse(item["call"]["aimedArrivalTime"])
         elif "aimedDepartureTime" in item["call"] and time_type == "any":
             parsed = parser.parse(item["call"]["aimedDepartureTime"])
@@ -122,7 +128,7 @@ class NysseData:
             return self._stops[entry["destinationShortName"]]
         return "unavailable"
 
-    def time_to_station(self, entry, seconds = False):
+    def time_to_station(self, entry, seconds=False):
         """Get time until departure in minutes"""
         time = self.get_departure_time(entry, False)
         if time != "unavailable":

@@ -31,7 +31,7 @@ title: Hervanan kampus A
 ignore_line_breaks: true
 content: >
   {% for departure in
-  states.sensor.nysse_hervannan_kampus_a_0835.attributes.departures %}
+  states.sensor.hervannan_kampus_a_0835.attributes.departures %}
 
   <div style="display:grid; grid-template-columns: 2fr 0.5fr; font-size: 20px">
   <div><ha-icon style="padding: 10px 10px 10px 10px" icon={{ departure.icon

@@ -9,21 +9,16 @@ from datetime import timedelta, datetime
 import time
 from homeassistant import config_entries, core
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from .network import request
 from .nysse_data import NysseData
-from .fetch_stop_points import fetch_stop_points
+from .fetch_api import fetch_stop_points
 from .const import (
-    CONF_STOPS,
     DEFAULT_MAX,
     DEFAULT_ICON,
     DEFAULT_TIMELIMIT,
-    DEFAULT_LINES,
     PLATFORM_NAME,
-    DOMAIN,
     NYSSE_JOURNEYS_URL,
     NYSSE_STOP_URL,
     WEEKDAYS,
@@ -41,46 +36,34 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Setup sensors from a config entry created in the integrations UI."""
-    config = hass.data[DOMAIN][config_entry.entry_id]
-    stops = config[CONF_STOPS]
 
     sensors = []
-    for stop in stops:
-        if stop["station"] is not None:
-            sensors.append(
-                NysseSensor(
-                    PLATFORM_NAME,
-                    stop["station"],
-                    stop["max"] if "max" in stop else DEFAULT_MAX,
-                    stop["timelimit"] if "timelimit" in stop else DEFAULT_TIMELIMIT,
-                    stop["lines"] if "lines" in stop else DEFAULT_LINES,
-                )
+    if "station" in config_entry.options:
+        sensors.append(
+            NysseSensor(
+                PLATFORM_NAME,
+                config_entry.options["station"],
+                config_entry.options["max"]
+                if "max" in config_entry.options
+                else DEFAULT_MAX,
+                config_entry.options["timelimit"]
+                if "timelimit" in config_entry.options
+                else DEFAULT_TIMELIMIT,
+                config_entry.options["lines"],
             )
-
-    async_add_entities(sensors, update_before_add=True)
-
-
-async def async_setup_platform(
-    hass: HomeAssistant,
-    config: ConfigType,
-    async_add_entities: AddEntitiesCallback,
-    discovery_info: DiscoveryInfoType | None = None,
-) -> None:
-    """Set up the sensor platform."""
-    stops = config.get(CONF_STOPS)
-
-    sensors = []
-    for stop in stops:
-        if stop["station"] is not None:
-            sensors.append(
-                NysseSensor(
-                    PLATFORM_NAME,
-                    stop["station"],
-                    stop["max"],
-                    stop["timelimit"],
-                    stop["lines"],
-                )
+        )
+    else:
+        sensors.append(
+            NysseSensor(
+                PLATFORM_NAME,
+                config_entry.data["station"],
+                config_entry.data["max"] if "max" in config_entry.data else DEFAULT_MAX,
+                config_entry.data["timelimit"]
+                if "timelimit" in config_entry.data
+                else DEFAULT_TIMELIMIT,
+                config_entry.data["lines"],
             )
+        )
 
     async_add_entities(sensors, update_before_add=True)
 
@@ -97,7 +80,7 @@ class NysseSensor(SensorEntity):
         self.station_no = station
         self.max_items = int(maximum)
         self.timelimit = int(timelimit)
-        self.lines = [line.strip() for line in lines.split(",")]
+        self.lines = lines
 
         self._station_name = ""
         self._state = None
@@ -122,7 +105,7 @@ class NysseSensor(SensorEntity):
                 ) < datetime.now().astimezone(LOCAL_TZ) + timedelta(
                     minutes=self.timelimit
                 ) or (
-                    journey["lineRef"] not in self.lines and self.lines[0] != "all"
+                    journey["lineRef"] not in self.lines
                 ):
                     journeys_to_remove.append(journey)
             for journey1 in journeys_to_remove:
@@ -144,7 +127,7 @@ class NysseSensor(SensorEntity):
 
                 if (
                     self._nysse_data.time_to_station(item, True) < (self.timelimit * 60)
-                ) or (item["lineRef"] not in self.lines and self.lines[0] != "all"):
+                ) or item["lineRef"] not in self.lines:
                     departures_to_remove.append(item)
 
         for journey1 in journeys_to_remove:
@@ -152,14 +135,14 @@ class NysseSensor(SensorEntity):
             self._journeys[self._current_weekday_int].remove(journey1)
 
         if removed_journey_count > 0:
-            _LOGGER.info(
+            _LOGGER.debug(
                 "%s: Removed %s stale or unwanted journeys",
                 self.station_no,
                 removed_journey_count,
             )
 
         if len(departures_to_remove) > 0:
-            _LOGGER.info(
+            _LOGGER.debug(
                 "%s: Removing %s stale or unwanted departures",
                 self.station_no,
                 len(departures_to_remove),
@@ -169,7 +152,7 @@ class NysseSensor(SensorEntity):
 
     async def fetch_stops(self):
         if len(self._stops) == 0:
-            _LOGGER.info("Fectching stops")
+            _LOGGER.debug("Fectching stops")
             self._stops = await fetch_stop_points(False)
 
     def modify_journey_data(self, journeys, weekday_int):
@@ -223,7 +206,7 @@ class NysseSensor(SensorEntity):
         departure_url = NYSSE_STOP_URL.format(self.station_no)
 
         try:
-            _LOGGER.info(
+            _LOGGER.debug(
                 "%s: Fectching departures from %s", self.station_no, departure_url
             )
             self._live_data = await request(departure_url)
@@ -244,7 +227,7 @@ class NysseSensor(SensorEntity):
                     total_journeys_left += len(self._journeys[i])
 
             if total_journeys_left < self.max_items:
-                _LOGGER.info(
+                _LOGGER.debug(
                     "%s: Not enough timetable data remaining. Trying to fetch new data",
                     self.station_no,
                 )
@@ -259,7 +242,7 @@ class NysseSensor(SensorEntity):
                             self.station_no, weekday, journeys_index
                         )
 
-                        _LOGGER.info(
+                        _LOGGER.debug(
                             "%s: Fetching timetable data from %s",
                             self.station_no,
                             journeys_url,
@@ -299,7 +282,7 @@ class NysseSensor(SensorEntity):
 
         self.remove_stale_data()
 
-        _LOGGER.info(
+        _LOGGER.debug(
             "%s: Data fetching complete. Populating sensor with data", self.station_no
         )
         self._nysse_data.populate(

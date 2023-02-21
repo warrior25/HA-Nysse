@@ -1,18 +1,42 @@
 {
   "config": {
     "error": {
-      "request": "Yhteys Nysse-palvelimiin epäonnistui.",
-      "invalid_station": "Virheellinen pysäkki"
+      "request": "Yhteys Nysse-palvelimiin epäonnistui",
+      "invalid_station": "Virheellinen pysäkki",
+      "invalid_lines": "Valitse ainakin yksi linja"
+    },
+    "abort": {
+      "already_configured": "Pysäkki on jo lisätty"
     },
     "step": {
       "user": {
         "title": "Nysse Tampere",
-        "description": "Syötä seurattava pysäkki.",
+        "description": "Syötä seurattava pysäkki",
         "data": {
-          "station": "Pysäkki",
+          "station": "Pysäkki"
+        }
+      },
+      "options": {
+        "title": "Nysse Tampere",
+        "description": "Seurattavan pysäkin asetukset",
+        "data": {
           "max": "Näytettävien lähtöjen määrä",
           "timelimit": "Vähimmäisaika lähtöön",
-          "lines": "Linjat, jotka näytetään (pilkulla erotettuina)"
+          "lines": "Linjat, jotka näytetään"
+        }
+      }
+    }
+  },
+  "options": {
+    "error": {
+      "invalid_path": "The path provided is not valid. Should be in the format `user/repo-name` and should be a valid github repository."
+    },
+    "step": {
+      "init": {
+        "title": "Pysäkin asetukset",
+        "data": {
+          "max": "Näytettävien lähtöjen määrä",
+          "timelimit": "Vähimmäisaika lähtöön"
         }
       }
     }

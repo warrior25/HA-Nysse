@@ -1,5 +1,5 @@
 {
-  "codeowners": ["@morosanmihail", "@warrior25"],
+  "codeowners": ["@warrior25"],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/warrior25/HA-Nysse",

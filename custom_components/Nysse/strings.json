@@ -1,18 +1,28 @@
 {
   "config": {
     "error": {
-      "request": "Failed to connect to Nysse servers to retrieve data.",
-      "invalid_station": "Invalid station"
+      "request": "Failed to connect to Nysse servers to retrieve data",
+      "invalid_station": "Invalid station",
+      "invalid_lines": "Select at least one line"
+    },
+    "abort": {
+      "already_configured": "Stop is already configured"
     },
     "step": {
       "user": {
         "title": "Nysse Tampere",
-        "description": "Enter the station and line you would like to follow.",
+        "description": "Enter the station and line you would like to follow",
         "data": {
-          "station": "Station",
+          "station": "Station"
+        }
+      },
+      "options": {
+        "title": "Nysse Tampere",
+        "description": "Options for the station to follow",
+        "data": {
           "max": "Number of departures to report",
           "timelimit": "Minimum time to departure",
-          "lines": "Lines to show (separated by comma)"
+          "lines": "Lines to show"
         }
       }
     }
@@ -23,13 +33,11 @@
     },
     "step": {
       "init": {
-        "title": "Manage Repos",
+        "title": "Stop options",
         "data": {
-          "repos": "Existing Repos: Uncheck any repos you want to remove.",
-          "path": "New Repo: Path to the repository e.g. home-assistant-core",
-          "name": "New Repo: Name of the sensor."
-        },
-        "description": "Remove existing repos or add a new repo."
+          "max": "Number of departures to report",
+          "timelimit": "Minimum time to departure"
+        }
       }
     }
   }
