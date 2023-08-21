@@ -30,15 +30,18 @@ type: custom:html-template-card
 title: Hervanan kampus A
 ignore_line_breaks: true
 content: >
-  {% for departure in
-  states.sensor.hervannan_kampus_a_0835.attributes.departures %}
+  <div style="font-size:24px"><br>Hervannan kampus A</div>
+  {% set departures = state_attr('sensor.hervannan_kampus_a_0835','departures') %}
+  {% for i in range(0, departures | count, 1) %}
 
-  <div style="display:grid; grid-template-columns: 2fr 0.5fr; font-size: 20px">
-  <div><ha-icon style="padding: 10px 10px 10px 10px" icon={{ departure.icon
-  }}></ha-icon> {{ departure.line }} - {{ departure.destination }}</div><div
-  style="text-align: right"> {% if departure.time_to_station | int < 26  %}
-  {{departure.time_to_station }} min {% else %} {{departure.departure}} {% endif
-  %}</div></div>
+  <div style="display:grid; grid-template-columns: 2fr 1fr; font-size: 20px;
+  padding: 10px 0px 0px 0px"> <div><ha-icon style="padding: 0px 10px 10px 0px;
+  color:#da2128" icon="mdi:numeric-3-box"></ha-icon> {{ departures[i].destination
+  }}</div><div style="text-align: right">{% if departures[i].realtime %}<ha-icon
+  style="color:green; padding: 0px 10px 0px 0px"
+  icon="mdi:signal-variant"></ha-icon>{% endif %} {% if
+  departures[i].time_to_station | int < 21  %} {{departures[i].time_to_station}} min {%
+  else %}{{departures[i].departure}}{% endif %}</div></div>
 
   {% endfor %}
   ```
