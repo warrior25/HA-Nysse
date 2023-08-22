@@ -1,18 +1,20 @@
+import logging
 import aiohttp
-import async_timeout
+
+REQUEST_TIMEOUT = 30
+_LOGGER = logging.getLogger(__name__)
 
 
-async def fetch(session, url):
-    try:
-        with async_timeout.timeout(15):
+async def get(url):
+    timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        try:
             async with session.get(
                 url, headers={"Accept": "application/json"}
             ) as response:
-                return await response.text()
-    except:
-        pass
-
-
-async def request(url):
-    async with aiohttp.ClientSession() as session:
-        return await fetch(session, url)
+                if response.status == 200:
+                    return await response.text()
+                _LOGGER.error("GET %s: %s", url, response.status)
+                return
+        except aiohttp.ClientConnectorError as err:
+            _LOGGER.error("Connection error: %s", err)

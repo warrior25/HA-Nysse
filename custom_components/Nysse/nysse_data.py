@@ -19,12 +19,20 @@ class NysseData:
         self._station_id = ""
         self._stops = []
 
-    def populate(self, departures, journeys, station_id, stops, max_items):
+    def populate(
+        self,
+        departures,
+        journeys,
+        station_id,
+        stops,
+        max_items,
+        update_time,
+    ):
         """Collect sensor data to corresponding variables."""
         departures2 = []
         self._station_id = station_id
         self._stops = stops
-        self._last_update = datetime.now().astimezone(LOCAL_TZ)
+        self._last_update = update_time
 
         if self._station_id in departures["body"]:
             departures2 = departures["body"][self._station_id]
@@ -33,25 +41,17 @@ class NysseData:
         self._json_data = departures2[:max_items]
 
         # Append static timetable data if not enough realtime data
-        weekday_int = datetime.today().weekday()
         i = 0
-
         while len(self._json_data) < max_items:
-            if len(journeys[weekday_int]) <= i:
-                i = 0
-                if weekday_int < 6:
-                    weekday_int += 1
-                else:
-                    weekday_int = 0
-                if weekday_int == datetime.today().weekday():
-                    _LOGGER.warning(
-                        "%s: Not enough timetable data was found. Try decreasing the number of requested departures",
-                        station_id,
-                    )
-                    break
-            else:
-                self._json_data.append(journeys[weekday_int][i])
+            if i < len(journeys):
+                self._json_data.append(journeys[i])
                 i += 1
+            else:
+                _LOGGER.warning(
+                    "%s: Not enough timetable data was found. Try decreasing the number of requested departures",
+                    station_id,
+                )
+                break
 
     def get_state(self):
         """Get next departure time as the sensor state."""
@@ -68,7 +68,7 @@ class NysseData:
                 "destination": self.get_destination_name(item),
                 "line": item["lineRef"],
                 "departure": self.get_departure_time(item, True),
-                "time_to_station": self.time_to_station(item),
+                "time_to_station": self.time_to_station(item, self._last_update),
                 "icon": self.get_line_icon(item["lineRef"]),
                 "realtime": self.is_realtime(item),
             }
@@ -128,11 +128,11 @@ class NysseData:
             return self._stops[entry["destinationShortName"]]
         return "unavailable"
 
-    def time_to_station(self, entry, seconds=False):
+    def time_to_station(self, entry, current_time, seconds=False):
         """Get time until departure in minutes"""
         time = self.get_departure_time(entry, False)
         if time != "unavailable":
-            next_departure_time = (time - datetime.now().astimezone(LOCAL_TZ)).seconds
+            next_departure_time = (time - current_time).seconds
 
             if seconds:
                 return next_departure_time

@@ -1,4 +1,4 @@
-from .network import request
+from .network import get
 from .const import NYSSE_STOP_POINTS_URL, NYSSE_LINES_URL
 import logging
 import json
@@ -13,7 +13,7 @@ async def fetch_stop_points(has_id):
     else:
         stations = []
     try:
-        result = await request(NYSSE_STOP_POINTS_URL)
+        result = await get(NYSSE_STOP_POINTS_URL)
         if not result:
             _LOGGER.error("Could not fetch stop points")
             return
@@ -33,8 +33,8 @@ async def fetch_stop_points(has_id):
             stations = sorted(stations, key=lambda item: item["label"])
         return stations
 
-    except OSError:
-        _LOGGER.error("Unknown exception. Check your internet connection")
+    except OSError as err:
+        _LOGGER.error("Failed to fetch stops: %s", err)
         return
 
 
@@ -43,7 +43,7 @@ async def fetch_lines(stop):
     lines = []
     try:
         lines_url = NYSSE_LINES_URL.format(stop)
-        result = await request(lines_url)
+        result = await get(lines_url)
         if not result:
             _LOGGER.error("Could not fetch lines points")
             return
@@ -52,6 +52,6 @@ async def fetch_lines(stop):
             lines.append(line["name"])
         return lines
 
-    except OSError:
-        _LOGGER.error("Unknown exception. Check your internet connection")
+    except OSError as err:
+        _LOGGER.error("Failed to fetch lines: %s", err)
         return
