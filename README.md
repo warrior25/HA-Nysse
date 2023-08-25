@@ -12,6 +12,8 @@ Copy the files to your `custom_components` folder or install as a HACS custom re
 
 ## Setup
 
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=nysse)
+
 The integration can be set up from the frontend by searching for `Nysse`.
 
 ## Usage
