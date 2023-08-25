@@ -140,7 +140,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            print(user_input)
             self.stations = await fetch_stop_points(True)
             for station in self.stations:
                 if station["value"] == self.config_entry.data[CONF_STATION]:

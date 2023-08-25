@@ -21,6 +21,16 @@ WEEKDAYS = [
     "Sunday",
 ]
 
+DEFAULT_TIME_ZONE = "Europe/Helsinki"
+
+JOURNEY = "journey"
+DEPARTURE = "departure"
+AIMED_ARRIVAL_TIME = "aimedArrivalTime"
+AIMED_DEPARTURE_TIME = "aimedDepartureTime"
+EXPECTED_ARRIVAL_TIME = "expectedArrivalTime"
+EXPECTED_DEPARTURE_TIME = "expectedDepartureTime"
+
+
 NYSSE_STOP_URL = "https://data.itsfactory.fi/journeys/api/1/stop-monitoring?stops={0}"
 NYSSE_STOP_POINTS_URL = "http://data.itsfactory.fi/journeys/api/1/stop-points/"
 NYSSE_JOURNEYS_URL = "http://data.itsfactory.fi/journeys/api/1/journeys?stopPointId={0}&dayTypes={1}&startIndex={2}"

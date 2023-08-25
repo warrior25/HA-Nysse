@@ -1,7 +1,6 @@
+from __future__ import annotations
 import asyncio
-
 from homeassistant import config_entries, core
-
 from .const import DOMAIN
 
 
