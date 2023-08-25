@@ -29,7 +29,6 @@ Simple frontend example using [custom:html-template-card](https://github.com/Pio
 
 ```yaml
 type: custom:html-template-card
-title: Hervanan kampus A
 ignore_line_breaks: true
 content: >
   <div style="font-size:24px"><br>Hervannan kampus A</div>
@@ -47,3 +46,7 @@ content: >
 
   {% endfor %}
   ```
+
+## Known issues / limitations
+
+* Line icons are resolved from a hardcoded list of tram lines. If new tram lines are built, the list needs to be updated in `const.py`.
