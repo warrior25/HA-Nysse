@@ -1,7 +1,5 @@
 {
-  "codeowners": [
-    "@warrior25"
-  ],
+  "codeowners": ["@warrior25"],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/warrior25/HA-Nysse",
@@ -10,7 +8,7 @@
   "issue_tracker": "https://github.com/warrior25/HA-Nysse/issues",
   "name": "Nysse",
   "requirements": [],
-  "version": "0.2",
+  "version": "0.1",
   "ssdp": [],
   "zeroconf": [],
   "homekit": {}
