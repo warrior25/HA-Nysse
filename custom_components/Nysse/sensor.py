@@ -88,11 +88,14 @@ class NysseSensor(SensorEntity):
         removed_journey_count = 0
         removed_departures_count = 0
 
-        # Remove unwanted journeys based on departure time and stop code
+        # Remove unwanted journeys based on departure time, stop code and line number
         for journey in journeys[:]:
-            if journey["departureTime"] < self._last_update_time + timedelta(
-                minutes=self.timelimit
-            ) or (journey["stopCode"] != self.stop_code):
+            if (
+                journey["departureTime"]
+                < self._last_update_time + timedelta(minutes=self.timelimit)
+                or (journey["stopCode"] != self.stop_code)
+                or (journey["line"] not in self.lines)
+            ):
                 journeys.remove(journey)
                 removed_journey_count += 1
 
