@@ -29,24 +29,38 @@ Simple frontend example using [custom:html-template-card](https://github.com/Pio
 
 ```yaml
 type: custom:html-template-card
+title: Keskustori D
 ignore_line_breaks: true
 content: >
-  <div style="font-size:24px"><br>Hervannan kampus A</div>
-  {% set departures = state_attr('sensor.hervannan_kampus_a_0835','departures') %}
-  {% for i in range(0, departures | count, 1) %}
+  {% set departures = state_attr('sensor.keskustori_d_0015','departures')
+  %} {% for i in range(0, departures | count, 1) %}
 
   <div style="display:grid; grid-template-columns: 2fr 1fr; font-size: 20px;
-  padding: 10px 0px 0px 0px"> <div><ha-icon style="padding: 0px 10px 10px 0px;
-  color:#da2128" icon="mdi:numeric-3-box"></ha-icon> {{ departures[i].destination
-  }}</div><div style="text-align: right">{% if departures[i].realtime %}<ha-icon
-  style="color:green; padding: 0px 10px 0px 0px"
-  icon="mdi:signal-variant"></ha-icon>{% endif %} {% if
-  departures[i].time_to_station | int < 21  %} {{departures[i].time_to_station}} min {%
-  else %}{{departures[i].departure}}{% endif %}</div></div>
+  padding: 10px 0px 0px 0px"> <div>{{ departures[i].line }} - {{
+  departures[i].destination }}</div><div style="text-align: right">{% if
+  departures[i].realtime %}<ha-icon style="color:green; padding: 0px 10px 0px
+  0px" icon="mdi:signal-variant"></ha-icon>{% endif %} {% if
+  departures[i].time_to_station | int < 21  %} {{departures[i].time_to_station}}
+  min {% else %}{{departures[i].departure}}{% endif %}</div></div>
 
   {% endfor %}
-  ```
+```
+
+## Advanced usage
+
+### Combine data from multiple stops
+
+```yaml
+ - platform: template
+    sensors:
+      combined_stops:
+        value_template: "{{ states('sensor.stop1') }}"
+        attribute_templates:
+          departures: >-
+            {% set combined_data = state_attr('sensor.stop1', 'departures') + state_attr('sensor.stop2', 'departures') %}
+            {{ combined_data | sort(attribute='time_to_station') }}
+```
 
 ## Known issues / limitations
 
-* Line icons are resolved from a hardcoded list of tram lines. If new tram lines are built, the list needs to be updated in `const.py`.
+- Line icons are resolved from a hardcoded list of tram lines. If new tram lines are built, the list needs to be updated in `const.py`.
