@@ -1,8 +1,5 @@
 {
   "name": "Nysse",
   "country": "FI",
-  "iot_class": [
-    "Cloud Polling"
-  ],
   "render_readme": true
 }
