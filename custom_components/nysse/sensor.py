@@ -1,19 +1,37 @@
 """Platform for sensor integration."""
 from __future__ import annotations
-import logging
+
+from datetime import datetime, timedelta
 import json
-from datetime import timedelta, datetime
-import pytz
+import logging
+
 from dateutil import parser
+
 from homeassistant import config_entries, core
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from .network import get
+import homeassistant.util.dt as dt_util
+
+from .const import (
+    AIMED_ARRIVAL_TIME,
+    AIMED_DEPARTURE_TIME,
+    DEFAULT_ICON,
+    DEFAULT_MAX,
+    DEFAULT_TIMELIMIT,
+    DEPARTURE,
+    EXPECTED_ARRIVAL_TIME,
+    EXPECTED_DEPARTURE_TIME,
+    JOURNEY,
+    JOURNEYS_URL,
+    PLATFORM_NAME,
+    STOP_URL,
+    TRAM_LINES,
+    WEEKDAYS,
+)
 from .fetch_api import fetch_stop_points
-from .const import *
+from .network import get
 
 _LOGGER = logging.getLogger(__name__)
-# Changing this also affects
 SCAN_INTERVAL = timedelta(seconds=30)
 PAGE_SIZE = 100
 
@@ -23,8 +41,7 @@ async def async_setup_entry(
     config_entry: config_entries.ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Setup sensors from a config entry created in the integrations UI."""
-
+    """Setups sensors from a config entry created in the integrations UI."""
     sensors = []
     if "station" in config_entry.options:
         sensors.append(
@@ -61,7 +78,6 @@ class NysseSensor(SensorEntity):
 
     def __init__(self, stop_code, maximum, timelimit, lines, time_zone) -> None:
         """Initialize the sensor."""
-
         self._unique_id = PLATFORM_NAME + "_" + stop_code
         self.stop_code = stop_code
         self.max_items = int(maximum)
@@ -74,17 +90,19 @@ class NysseSensor(SensorEntity):
 
         self._current_weekday_int = -1
         self._last_update_time = None
-        self._time_zone = pytz.timezone(time_zone)
+        self._time_zone = dt_util.get_time_zone(time_zone)
 
         self._fetch_fail_counter = 0
         self._fetch_pause_counter = 0
 
     async def fetch_stops(self, force=False):
+        """Fetch stops if not fetched already."""
         if len(self._stops) == 0 or force:
             _LOGGER.debug("Fetching stops")
             self._stops = await fetch_stop_points(False)
 
     def remove_unwanted_data(self, departures, journeys):
+        """Remove stale and unwanted data."""
         removed_journey_count = 0
         removed_departures_count = 0
 
@@ -137,7 +155,8 @@ class NysseSensor(SensorEntity):
         return departures, journeys
 
     async def fetch_departures(self):
-        url = NYSSE_STOP_URL.format(self.stop_code)
+        """Fetch live stop monitoring data."""
+        url = STOP_URL.format(self.stop_code)
         _LOGGER.debug(
             "%s: Fectching departures from %s",
             self.stop_code,
@@ -155,13 +174,14 @@ class NysseSensor(SensorEntity):
         return self.format_departures(unformatted_departures)
 
     async def fetch_journeys(self):
+        """Fetch static timetable data."""
         journeys = []
 
         async def fetch_data_for_weekday(weekday_index):
             journeys_index = 0
             weekday_string = WEEKDAYS[weekday_index]
             while True:
-                url = NYSSE_JOURNEYS_URL.format(
+                url = JOURNEYS_URL.format(
                     self.stop_code, weekday_string, journeys_index
                 )
                 _LOGGER.debug(
@@ -200,6 +220,7 @@ class NysseSensor(SensorEntity):
         return journeys
 
     def format_departures(self, departures):
+        """Format live stop monitoring data."""
         try:
             body = departures["body"][self.stop_code]
             formatted_data = []
@@ -227,6 +248,7 @@ class NysseSensor(SensorEntity):
             return []
 
     def format_journeys(self, journeys, weekday):
+        """Format static timetable data."""
         formatted_data = []
 
         if weekday == self._current_weekday_int:
@@ -263,6 +285,7 @@ class NysseSensor(SensorEntity):
     def get_departure_time(
         self, item, item_type, delta=timedelta(seconds=0), time_type=""
     ):
+        """Calculate departure time."""
         try:
             if item_type == DEPARTURE:
                 if time_type != "":
@@ -352,6 +375,7 @@ class NysseSensor(SensorEntity):
             _LOGGER.error("%s: Failed to update sensor: %s", self.stop_code, err)
 
     def combine_data(self, departures, journeys):
+        """Combine live and static data."""
         combined_data = departures[: self.max_items]
         i = 0
         while len(combined_data) < self.max_items:
@@ -367,6 +391,7 @@ class NysseSensor(SensorEntity):
         return self.data_to_display_format(combined_data)
 
     def data_to_display_format(self, data):
+        """Format data to be displayed in sensor attributes."""
         formatted_data = []
         for item in data:
             departure = {
@@ -381,23 +406,25 @@ class NysseSensor(SensorEntity):
         return formatted_data
 
     def get_line_icon(self, line_no):
-        if line_no in (TRAM_LINES):
+        """Get line icon based on operating vehicle type."""
+        if line_no in TRAM_LINES:
             return "mdi:tram"
         return "mdi:bus"
 
     def time_to_station(self, item):
-        """Get time until departure"""
+        """Get time until departure."""
         next_departure_time = (item["departureTime"] - self._last_update_time).seconds
         return int(next_departure_time / 60)
 
     @property
     def unique_id(self) -> str:
+        """Unique id for the sensor."""
         return self._unique_id
 
     @property
     def name(self) -> str:
         """Return the name of the sensor."""
-        return "{0} ({1})".format(self._stops[self.stop_code], self.stop_code)
+        return f"{self._stops[self.stop_code]} ({self.stop_code})"
 
     @property
     def icon(self) -> str:
@@ -413,6 +440,7 @@ class NysseSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self):
+        """Sensor attributes."""
         attributes = {
             "last_refresh": self._last_update_time,
             "departures": self._all_data,

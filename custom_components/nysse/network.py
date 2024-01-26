@@ -1,4 +1,5 @@
 import logging
+
 import aiohttp
 
 REQUEST_TIMEOUT = 30
@@ -6,6 +7,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def get(url):
+    """Http GET helper."""
     timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         try:

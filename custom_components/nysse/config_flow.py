@@ -1,21 +1,22 @@
 from typing import Any, Optional
-from homeassistant import config_entries
-from .fetch_api import fetch_stop_points, fetch_lines
-from homeassistant.helpers.selector import selector
-import homeassistant.helpers.config_validation as cv
-from homeassistant.core import callback
+
 import voluptuous as vol
-import logging
+
+from homeassistant import config_entries
+from homeassistant.core import callback
+import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.selector import selector
 
 from .const import (
-    CONF_STATION,
-    CONF_MAX,
-    DEFAULT_MAX,
-    CONF_TIMELIMIT,
-    DEFAULT_TIMELIMIT,
     CONF_LINES,
+    CONF_MAX,
+    CONF_STATION,
+    CONF_TIMELIMIT,
+    DEFAULT_MAX,
+    DEFAULT_TIMELIMIT,
     DOMAIN,
 )
+from .fetch_api import fetch_lines, fetch_stop_points
 
 
 @config_entries.HANDLERS.register(DOMAIN)
@@ -73,7 +74,7 @@ class NysseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         lines = await fetch_lines(self.data[CONF_STATION])
         options_schema = {
-            vol.Required(CONF_LINES): cv.multi_select(lines),
+            vol.Required(CONF_LINES, default=lines): cv.multi_select(lines),
             vol.Optional(CONF_TIMELIMIT, default=DEFAULT_TIMELIMIT): selector(
                 {
                     "number": {

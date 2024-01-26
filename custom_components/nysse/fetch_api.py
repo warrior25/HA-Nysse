@@ -1,19 +1,20 @@
-from .network import get
-from .const import NYSSE_STOP_POINTS_URL, NYSSE_LINES_URL
-import logging
 import json
+import logging
+
+from .const import LINES_URL, STOP_POINTS_URL
+from .network import get
 
 _LOGGER = logging.getLogger(__name__)
 
 
 async def fetch_stop_points(has_id):
-    """Fetches stop point names"""
+    """Fetch stop point names."""
     if not has_id:
         stations = {}
     else:
         stations = []
     try:
-        result = await get(NYSSE_STOP_POINTS_URL)
+        result = await get(STOP_POINTS_URL)
         if not result:
             _LOGGER.error("Could not fetch stop points")
             return
@@ -28,30 +29,29 @@ async def fetch_stop_points(has_id):
                 stations[stop["shortName"]] = stop["name"]
 
         if not has_id:
-            stations = dict(sorted(stations.items(), key=lambda item: item[1]))
-        else:
-            stations = sorted(stations, key=lambda item: item["label"])
-        return stations
+            return dict(sorted(stations.items(), key=lambda item: item[1]))
 
-    except OSError as err:
+        return sorted(stations, key=lambda item: item["label"])
+
+    except (OSError, KeyError) as err:
         _LOGGER.error("Failed to fetch stops: %s", err)
         return
 
 
 async def fetch_lines(stop):
-    """Fetches stop point names"""
+    """Fetch line point names."""
     lines = []
     try:
-        lines_url = NYSSE_LINES_URL.format(stop)
+        lines_url = LINES_URL.format(stop)
         result = await get(lines_url)
         if not result:
-            _LOGGER.error("Could not fetch lines points")
+            _LOGGER.error("Could not fetch lines")
             return
         result = json.loads(result)
         for line in result["body"]:
             lines.append(line["name"])
         return lines
 
-    except OSError as err:
+    except (OSError, KeyError) as err:
         _LOGGER.error("Failed to fetch lines: %s", err)
         return

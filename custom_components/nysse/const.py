@@ -31,7 +31,10 @@ EXPECTED_ARRIVAL_TIME = "expectedArrivalTime"
 EXPECTED_DEPARTURE_TIME = "expectedDepartureTime"
 
 
-NYSSE_STOP_URL = "https://data.itsfactory.fi/journeys/api/1/stop-monitoring?stops={0}"
-NYSSE_STOP_POINTS_URL = "http://data.itsfactory.fi/journeys/api/1/stop-points/"
-NYSSE_JOURNEYS_URL = "http://data.itsfactory.fi/journeys/api/1/journeys?stopPointId={0}&dayTypes={1}&startIndex={2}"
-NYSSE_LINES_URL = "https://data.itsfactory.fi/journeys/api/1/lines?stopPointId={0}"
+STOP_URL = "https://data.itsfactory.fi/journeys/api/1/stop-monitoring?stops={0}"
+STOP_POINTS_URL = "http://data.itsfactory.fi/journeys/api/1/stop-points/"
+JOURNEYS_URL = "http://data.itsfactory.fi/journeys/api/1/journeys?stopPointId={0}&dayTypes={1}&startIndex={2}"
+LINES_URL = "https://data.itsfactory.fi/journeys/api/1/lines?stopPointId={0}"
+SERVICE_ALERTS_URL = (
+    "https://data.itsfactory.fi/journeys/api/1/gtfs-rt/service-alerts/json"
+)
