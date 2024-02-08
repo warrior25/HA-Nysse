@@ -1,7 +1,7 @@
 """Platform for sensor integration."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 import json
 import logging
 
@@ -19,11 +19,13 @@ from .const import (
     DEFAULT_MAX,
     DEFAULT_TIMELIMIT,
     DEPARTURE,
+    DOMAIN,
     EXPECTED_ARRIVAL_TIME,
     EXPECTED_DEPARTURE_TIME,
     JOURNEY,
     JOURNEYS_URL,
     PLATFORM_NAME,
+    SERVICE_ALERTS_URL,
     STOP_URL,
     TRAM_LINES,
     WEEKDAYS,
@@ -43,6 +45,11 @@ async def async_setup_entry(
 ) -> None:
     """Setups sensors from a config entry created in the integrations UI."""
     sensors = []
+    configs = hass.data[DOMAIN]
+    if len(configs) > 0:
+        if config_entry.entry_id == next(iter(configs)):
+            sensors.append(ServiceAlertSensor())
+
     if "station" in config_entry.options:
         sensors.append(
             NysseSensor(
@@ -54,7 +61,6 @@ async def async_setup_entry(
                 if "timelimit" in config_entry.options
                 else DEFAULT_TIMELIMIT,
                 config_entry.options["lines"],
-                hass.config.time_zone,
             )
         )
     else:
@@ -66,7 +72,6 @@ async def async_setup_entry(
                 if "timelimit" in config_entry.data
                 else DEFAULT_TIMELIMIT,
                 config_entry.data["lines"],
-                hass.config.time_zone,
             )
         )
 
@@ -76,7 +81,7 @@ async def async_setup_entry(
 class NysseSensor(SensorEntity):
     """Representation of a Sensor."""
 
-    def __init__(self, stop_code, maximum, timelimit, lines, time_zone) -> None:
+    def __init__(self, stop_code, maximum, timelimit, lines) -> None:
         """Initialize the sensor."""
         self._unique_id = PLATFORM_NAME + "_" + stop_code
         self.stop_code = stop_code
@@ -90,7 +95,6 @@ class NysseSensor(SensorEntity):
 
         self._current_weekday_int = -1
         self._last_update_time = None
-        self._time_zone = dt_util.get_time_zone(time_zone)
 
         self._fetch_fail_counter = 0
         self._fetch_pause_counter = 0
@@ -319,7 +323,7 @@ class NysseSensor(SensorEntity):
 
     async def async_update(self) -> None:
         """Fetch new state data for the sensor."""
-        self._last_update_time = datetime.now().astimezone(self._time_zone)
+        self._last_update_time = dt_util.now()
         self._current_weekday_int = self._last_update_time.weekday()
 
         try:
@@ -445,5 +449,106 @@ class NysseSensor(SensorEntity):
             "last_refresh": self._last_update_time,
             "departures": self._all_data,
             "station_name": self._stops[self.stop_code],
+        }
+        return attributes
+
+
+class ServiceAlertSensor(SensorEntity):
+    """Representation of a service alert sensor."""
+
+    def __init__(self) -> None:
+        """Initialize the sensor."""
+        self._last_update = ""
+        self._alerts = []
+        self._empty_response_counter = 0
+
+    def timestamp_to_local(self, timestamp):
+        """Convert timestamp to local datetime."""
+        utc = dt_util.utc_from_timestamp(int(str(timestamp)[:10]))
+        return dt_util.as_local(utc)
+
+    def conditionally_clear_alerts(self):
+        """Clear alerts if none received in 20 tries."""
+        if self._empty_response_counter >= 20:
+            self._empty_response_counter = 0
+            self._alerts.clear()
+
+    async def fetch_service_alerts(self):
+        """Fetch service alerts."""
+        try:
+            alerts = []
+            data = await get(SERVICE_ALERTS_URL)
+            if not data:
+                _LOGGER.warning(
+                    "Can't fetch service alerts. Incorrect response from %s",
+                    SERVICE_ALERTS_URL,
+                )
+                return
+            json_data = json.loads(data)
+
+            self._last_update = self.timestamp_to_local(
+                json_data["header"]["timestamp"]
+            )
+
+            for item in json_data["entity"]:
+                start_time = self.timestamp_to_local(
+                    item["alert"]["active_period"][0]["start"]
+                )
+                end_time = self.timestamp_to_local(
+                    item["alert"]["active_period"][0]["end"]
+                )
+                description = item["alert"]["description_text"]["translation"][0][
+                    "text"
+                ]
+
+                formatted_alert = {
+                    "description": description,
+                    "start": start_time,
+                    "end": end_time,
+                }
+                alerts.append(formatted_alert)
+
+            return alerts
+
+        except KeyError:
+            self._empty_response_counter += 1
+            self.conditionally_clear_alerts()
+            return self._alerts
+        except OSError as err:
+            _LOGGER.error("Failed to update service alerts: %s", err)
+            return []
+
+    async def async_update(self) -> None:
+        """Fetch new state data for the sensor."""
+        self._alerts = await self.fetch_service_alerts()
+
+    @property
+    def unique_id(self) -> str:
+        """Unique id for the sensor."""
+        return "service_alerts"
+
+    @property
+    def name(self) -> str:
+        """Return the name of the sensor."""
+        return "Nysse Service Alerts"
+
+    @property
+    def icon(self) -> str:
+        """Icon of the sensor."""
+        return "mdi:bus-alert"
+
+    @property
+    def state(self) -> str:
+        """Return the state of the sensor."""
+        if len(self._alerts) > 0:
+            return len(self._alerts)
+        return 0
+
+    @property
+    def extra_state_attributes(self):
+        """Sensor attributes."""
+        attributes = {
+            "last_refresh": self._last_update,
+            "alerts": self._alerts,
         }
         return attributes
