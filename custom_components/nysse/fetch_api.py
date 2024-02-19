@@ -33,9 +33,8 @@ async def fetch_stop_points(has_id):
 
         return sorted(stations, key=lambda item: item["label"])
 
-    except (OSError, KeyError) as err:
-        _LOGGER.error("Failed to fetch stops: %s", err)
-        return
+    except (OSError, KeyError):
+        return []
 
 
 async def fetch_lines(stop):
