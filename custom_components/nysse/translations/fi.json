@@ -1,9 +1,10 @@
 {
   "config": {
     "error": {
-      "request": "Yhteys Nysse-palvelimiin epäonnistui",
       "invalid_station": "Virheellinen pysäkki",
-      "invalid_lines": "Valitse ainakin yksi linja"
+      "invalid_lines": "Valitse vähintään yksi linja",
+      "no_stop_points": "Pysäkkien hakeminen epäonnistui. Yritä uudelleen myöhemmin",
+      "no_lines": "Linjojen hakeminen epäonnistui. Yritä uudelleen myöhemmin"
     },
     "abort": {
       "already_configured": "Pysäkki on jo lisätty"

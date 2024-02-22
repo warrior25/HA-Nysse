@@ -1,9 +1,10 @@
 {
   "config": {
     "error": {
-      "request": "Failed to connect to Nysse servers to retrieve data",
       "invalid_station": "Invalid station",
-      "invalid_lines": "Select at least one line"
+      "invalid_lines": "Select at least one line",
+      "no_stop_points": "Failed to fetch stops. Please try again later",
+      "no_lines": "Failed to fetch lines. Please try again later"
     },
     "abort": {
       "already_configured": "Stop is already configured"

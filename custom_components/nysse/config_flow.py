@@ -30,9 +30,12 @@ class NysseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.title = "Nysse"
 
     async def async_step_user(self, user_input: Optional[dict[str, Any]] = None):
-        errors: dict[str, str] = {}
+        errors = {}
 
         self.stations = await fetch_stop_points(True)
+        if len(self.stations) == 0:
+            errors["base"] = "no_stop_points"
+
         data_schema = {
             vol.Required(CONF_STATION): selector(
                 {
@@ -70,9 +73,12 @@ class NysseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_options(self, user_input: Optional[dict[str, Any]] = None):
-        errors: dict[str, str] = {}
+        errors = {}
 
         lines = await fetch_lines(self.data[CONF_STATION])
+        if len(lines) == 0:
+            errors["base"] = "no_lines"
+
         options_schema = {
             vol.Required(CONF_LINES, default=lines): cv.multi_select(lines),
             vol.Optional(CONF_TIMELIMIT, default=DEFAULT_TIMELIMIT): selector(
@@ -134,6 +140,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         self.config_entry = config_entry
         self.data: dict[str, Any] = {}
         self.title = ""
+        self.stations = []
 
     async def async_step_init(
         self, user_input: dict[str, Any] = None
@@ -142,6 +149,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
         if user_input is not None:
             self.stations = await fetch_stop_points(True)
+            if len(self.stations) == 0:
+                errors["base"] = "no_stop_points"
+
             for station in self.stations:
                 if station["value"] == self.config_entry.data[CONF_STATION]:
                     self.title = station["label"]

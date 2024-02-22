@@ -32,18 +32,18 @@ type: custom:html-template-card
 title: Keskustori D
 ignore_line_breaks: true
 content: >
-  {% set departures = state_attr('sensor.keskustori_d_0015','departures')
-  %} {% for i in range(0, departures | count, 1) %}
+    {% set departures = state_attr('sensor.keskustori_d_0015','departures')
+    %} {% for i in range(0, departures | count, 1) %}
 
-  <div style="display:grid; grid-template-columns: 2fr 1fr; font-size: 20px;
-  padding: 10px 0px 0px 0px"> <div>{{ departures[i].line }} - {{
-  departures[i].destination }}</div><div style="text-align: right">{% if
-  departures[i].realtime %}<ha-icon style="color:green; padding: 0px 10px 0px
-  0px" icon="mdi:signal-variant"></ha-icon>{% endif %} {% if
-  departures[i].time_to_station | int < 21  %} {{departures[i].time_to_station}}
-  min {% else %}{{departures[i].departure}}{% endif %}</div></div>
+    <div style="display:grid; grid-template-columns: 2fr 1fr; font-size: 20px;
+    padding: 10px 0px 0px 0px"> <div>{{ departures[i].line }} - {{
+    departures[i].destination }}</div><div style="text-align: right">{% if
+    departures[i].realtime %}<ha-icon style="color:green; padding: 0px 10px 0px
+    0px" icon="mdi:signal-variant"></ha-icon>{% endif %} {% if
+    departures[i].time_to_station | int < 21  %} {{departures[i].time_to_station}}
+    min {% else %}{{departures[i].departure}}{% endif %}</div></div>
 
-  {% endfor %}
+    {% endfor %}
 ```
 
 ## Advanced usage
@@ -63,4 +63,5 @@ content: >
 
 ## Known issues / limitations
 
-- Line icons are resolved from a hardcoded list of tram lines. If new tram lines are built, the list needs to be updated in `const.py`.
+-   Nysse API sometimes functions incorrectly. Errors logged with `Nysse API error` can be resolved on their own over time.
+-   Line icons are resolved from a hardcoded list of tram lines. If new tram lines are built, the list needs to be updated in `const.py`.

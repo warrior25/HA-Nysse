@@ -16,7 +16,7 @@ async def get(url):
             ) as response:
                 if response.status == 200:
                     return await response.text()
-                _LOGGER.error("GET %s: %s", url, response.status)
+                _LOGGER.debug("Incorrect status for GET %s: %s", url, response.status)
                 return
         except aiohttp.ClientConnectorError as err:
-            _LOGGER.error("Connection error: %s", err)
+            _LOGGER.error("Network connection error: %s", err)

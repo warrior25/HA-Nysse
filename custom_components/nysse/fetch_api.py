@@ -16,8 +16,8 @@ async def fetch_stop_points(has_id):
     try:
         result = await get(STOP_POINTS_URL)
         if not result:
-            _LOGGER.error("Could not fetch stop points")
-            return
+            _LOGGER.error("Nysse API error: failed to fetch stops: no data received")
+            return stations
         result = json.loads(result)
         for stop in result["body"]:
             if has_id:
@@ -33,8 +33,12 @@ async def fetch_stop_points(has_id):
 
         return sorted(stations, key=lambda item: item["label"])
 
-    except (OSError, KeyError):
-        return []
+    except KeyError as err:
+        _LOGGER.error("Nysse API error: failed to fetch stops: %s", err)
+        return stations
+    except OSError as err:
+        _LOGGER.error("Failed to fetch stops: %s", err)
+        return stations
 
 
 async def fetch_lines(stop):
@@ -44,13 +48,16 @@ async def fetch_lines(stop):
         lines_url = LINES_URL.format(stop)
         result = await get(lines_url)
         if not result:
-            _LOGGER.error("Could not fetch lines")
+            _LOGGER.error("Nysse API error: failed to fetch lines: no data received")
             return
         result = json.loads(result)
         for line in result["body"]:
             lines.append(line["name"])
         return lines
 
-    except (OSError, KeyError) as err:
+    except KeyError as err:
+        _LOGGER.error("Nysse API error: failed to fetch lines: %s", err)
+        return []
+    except OSError as err:
         _LOGGER.error("Failed to fetch lines: %s", err)
-        return
+        return []

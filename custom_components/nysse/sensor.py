@@ -169,7 +169,7 @@ class NysseSensor(SensorEntity):
         data = await get(url)
         if not data:
             _LOGGER.warning(
-                "%s: Can't fetch departures. Incorrect response from %s",
+                "%s: Nysse API error: failed to fetch realtime data: no data received from %s",
                 self.stop_code,
                 url,
             )
@@ -195,8 +195,8 @@ class NysseSensor(SensorEntity):
                 )
                 data = await get(url)
                 if not data:
-                    _LOGGER.error(
-                        "%s: Can't fetch timetables. Incorrect response from %s",
+                    _LOGGER.warning(
+                        "%s: Nysse API error: failed to fetch timetables: no data received from %s",
                         self.stop_code,
                         url + "&indent=yes",
                     )
@@ -245,10 +245,19 @@ class NysseSensor(SensorEntity):
                     ):
                         formatted_data.append(formatted_departure)
                 except KeyError as err:
-                    _LOGGER.info("Incorrect response structure: %s", err)
+                    _LOGGER.info(
+                        "%s: Failed to process realtime departure: %s",
+                        self.stop_code,
+                        err,
+                    )
                     continue
             return formatted_data
-        except KeyError:
+        except KeyError as err:
+            _LOGGER.info(
+                "%s: Nysse API error: failed to process realtime data: %s",
+                self.stop_code,
+                err,
+            )
             return []
 
     def format_journeys(self, journeys, weekday):
@@ -280,10 +289,18 @@ class NysseSensor(SensorEntity):
                         if formatted_journey["departureTime"] is not None:
                             formatted_data.append(formatted_journey)
                     except KeyError as err:
-                        _LOGGER.info("Incorrect response structure: %s", err)
+                        _LOGGER.info(
+                            "%s: Failed to process timetable departure: %s",
+                            self.stop_code,
+                            err,
+                        )
                         continue
         except KeyError as err:
-            _LOGGER.info("Incorrect response structure: %s", err)
+            _LOGGER.info(
+                "%s: Nysse API error: failed to fetch timetable data: %s",
+                self.stop_code,
+                err,
+            )
         return formatted_data
 
     def get_departure_time(
@@ -329,7 +346,6 @@ class NysseSensor(SensorEntity):
         try:
             await self.fetch_stops()
             if len(self._stops) == 0:
-                _LOGGER.error("%s: Failed to fetch stops", self.stop_code)
                 return
 
             departures = await self.fetch_departures()
@@ -352,14 +368,14 @@ class NysseSensor(SensorEntity):
                     if len(self._journeys) == 0:
                         self._fetch_fail_counter += 1
                         _LOGGER.warning(
-                            "%s: No valid timetable data received from API. This is likely not a problem with the integration. Failed %s time(s) already",
+                            "%s: Nysse API error: failed to fetch timetable data: %s",
                             self.stop_code,
                             self._fetch_fail_counter,
                         )
                         if self._fetch_fail_counter == 10:
                             self._fetch_fail_counter = 0
                             self._fetch_pause_counter = 30
-                            _LOGGER.warning(
+                            _LOGGER.error(
                                 "%s: Getting timetable data failed too many times. Next attempt in %s minutes. Reload integration to retry immediately",
                                 self.stop_code,
                                 self._fetch_pause_counter * SCAN_INTERVAL.seconds / 60,
@@ -469,6 +485,7 @@ class ServiceAlertSensor(SensorEntity):
 
     def conditionally_clear_alerts(self):
         """Clear alerts if none received in 20 tries."""
+        # TODO: Individual alerts may never be removed
         if self._empty_response_counter >= 20:
             self._empty_response_counter = 0
             self._alerts.clear()
@@ -480,7 +497,7 @@ class ServiceAlertSensor(SensorEntity):
             data = await get(SERVICE_ALERTS_URL)
             if not data:
                 _LOGGER.warning(
-                    "Can't fetch service alerts. Incorrect response from %s",
+                    "Nysse API error: failed to fetch service alerts: no data received from %s",
                     SERVICE_ALERTS_URL,
                 )
                 return
@@ -515,7 +532,7 @@ class ServiceAlertSensor(SensorEntity):
             self.conditionally_clear_alerts()
             return self._alerts
         except OSError as err:
-            _LOGGER.error("Failed to update service alerts: %s", err)
+            _LOGGER.error("Failed to fetch service alerts: %s", err)
             return []
 
     async def async_update(self) -> None:

@@ -43,10 +43,7 @@ async def async_unload_entry(
             *[hass.config_entries.async_forward_entry_unload(entry, "sensor")]
         )
     )
-    # Remove options_update_listener.
-    # hass.data[DOMAIN][entry.entry_id]["unsub_options_update_listener"]()
 
-    # Remove config entry from domain.
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
 
