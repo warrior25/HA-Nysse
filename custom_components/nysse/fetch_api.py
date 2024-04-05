@@ -1,5 +1,7 @@
+"""Fetches data from the Nysse GTFS API."""
+
 import csv
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import logging
 import os
 import pathlib
@@ -39,12 +41,12 @@ async def _fetch_gtfs():
     try:
         path = _get_dir_path()
         filename = "extended_gtfs_tampere.zip"
-        timestamp = _get_file_modified_time(path + filename)
-        if timestamp != datetime(1970, 1, 1) or datetime.now().minute != 0:
+        if os.path.isfile(path + filename) and datetime.now().minute != 0:
             _LOGGER.debug("Skipped fetching GTFS data")
             return  # Skip fetching if the file exists or it's not the top of the hour
+        timestamp = _get_file_modified_time(path + filename)
 
-        _LOGGER.debug("Fetching GTFS data")
+        _LOGGER.debug("Fetching GTFS data from %s", GTFS_URL)
         timeout = aiohttp.ClientTimeout(total=30)
         async with (
             aiohttp.ClientSession(timeout=timeout) as session,
@@ -72,7 +74,14 @@ async def _read_csv_to_db():
 
     # Stops
     cursor.execute(
-        "CREATE TABLE IF NOT EXISTS stops (stop_id TEXT PRIMARY KEY, stop_name TEXT, stop_lat TEXT, stop_lon TEXT)"
+        """
+        CREATE TABLE IF NOT EXISTS stops (
+            stop_id TEXT PRIMARY KEY,
+            stop_name TEXT,
+            stop_lat TEXT,
+            stop_lon TEXT
+        )
+        """
     )
     stops = _parse_csv_file(_get_dir_path() + "stops.txt")
     to_db = [
@@ -85,7 +94,15 @@ async def _read_csv_to_db():
 
     # Routes
     cursor.execute(
-        "CREATE TABLE IF NOT EXISTS trips (trip_id TEXT PRIMARY KEY, route_id TEXT, service_id TEXT, trip_headsign TEXT, direction_id TEXT)"
+        """
+        CREATE TABLE IF NOT EXISTS trips (
+            trip_id TEXT PRIMARY KEY,
+            route_id TEXT,
+            service_id TEXT,
+            trip_headsign TEXT,
+            direction_id TEXT
+        )
+        """
     )
     trips = _parse_csv_file(_get_dir_path() + "trips.txt")
     to_db = [
@@ -99,13 +116,30 @@ async def _read_csv_to_db():
         for i in trips
     ]
     cursor.executemany(
-        "INSERT OR REPLACE INTO trips (trip_id, route_id, service_id, trip_headsign, direction_id) VALUES (?, ?, ?, ?, ?)",
+        """
+        INSERT OR REPLACE INTO trips
+        (trip_id, route_id, service_id, trip_headsign, direction_id)
+        VALUES (?, ?, ?, ?, ?)
+        """,
         to_db,
     )
 
     # Calendar
     cursor.execute(
-        "CREATE TABLE IF NOT EXISTS calendar (service_id TEXT PRIMARY KEY, monday TEXT, tuesday TEXT, wednesday TEXT, thursday TEXT, friday TEXT, saturday TEXT, sunday TEXT)"
+        """
+        CREATE TABLE IF NOT EXISTS calendar (
+            service_id TEXT PRIMARY KEY,
+            monday TEXT,
+            tuesday TEXT,
+            wednesday TEXT,
+            thursday TEXT,
+            friday TEXT,
+            saturday TEXT,
+            sunday TEXT,
+            start_date TEXT,
+            end_date TEXT
+        )
+        """
     )
     calendar = _parse_csv_file(_get_dir_path() + "calendar.txt")
     to_db = [
@@ -118,17 +152,32 @@ async def _read_csv_to_db():
             i["friday"],
             i["saturday"],
             i["sunday"],
+            i["start_date"],
+            i["end_date"],
         )
         for i in calendar
     ]
     cursor.executemany(
-        "INSERT OR REPLACE INTO calendar (service_id, monday, tuesday, wednesday, thursday, friday, saturday, sunday) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        """
+        INSERT OR REPLACE INTO calendar
+        (service_id, monday, tuesday, wednesday, thursday, friday, saturday, sunday, start_date, end_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
         to_db,
     )
 
     # Stop times
     cursor.execute(
-        "CREATE TABLE IF NOT EXISTS stop_times (trip_id TEXT, arrival_time TIME, departure_time TIME, stop_id TEXT, stop_sequence TEXT, PRIMARY KEY(trip_id, arrival_time))"
+        """
+        CREATE TABLE IF NOT EXISTS stop_times (
+            trip_id TEXT,
+            arrival_time TIME,
+            departure_time TIME,
+            stop_id TEXT,
+            stop_sequence TEXT,
+            PRIMARY KEY(trip_id, arrival_time)
+        )
+        """
     )
     stop_times = _parse_csv_file(_get_dir_path() + "stop_times.txt")
     to_db = [
@@ -143,7 +192,11 @@ async def _read_csv_to_db():
     ]
     to_db.sort(key=lambda x: x[2])  # Sort by departure_time
     cursor.executemany(
-        "INSERT OR REPLACE INTO stop_times (trip_id, arrival_time, departure_time, stop_id, stop_sequence) VALUES (?, ?, ?, ?, ?)",
+        """
+        INSERT OR REPLACE INTO stop_times
+        (trip_id, arrival_time, departure_time, stop_id, stop_sequence)
+        VALUES (?, ?, ?, ?, ?)
+        """,
         to_db,
     )
 
@@ -198,7 +251,15 @@ async def get_route_ids(stop_id):
     await _fetch_gtfs()
     conn, cursor = _get_database()
     cursor.execute(
-        "SELECT DISTINCT route_id FROM trips WHERE trip_id IN (SELECT trip_id FROM stop_times WHERE stop_id = ?)",
+        """
+        SELECT DISTINCT route_id
+        FROM trips
+        WHERE trip_id IN (
+            SELECT trip_id
+            FROM stop_times
+            WHERE stop_id = ?
+        )
+        """,
         (stop_id,),
     )
     route_ids = [row[0] for row in cursor.fetchall()]
@@ -221,18 +282,38 @@ async def get_stop_times(stop_id, route_ids, amount, from_time):
     """
     await _fetch_gtfs()
     conn, cursor = _get_database()
-    today = datetime.now().strftime("%Y-%m-%d")
-    weekday = datetime.strptime(today, "%Y-%m-%d").strftime("%A").lower()
-    if from_time:
+    today = datetime.now().strftime("%Y%m%d")
+    weekday = datetime.strptime(today, "%Y%m%d").strftime("%A").lower()
+    stop_times = []
+    delta_days = 0
+    while len(stop_times) < amount:
         cursor.execute(
-            f"SELECT route_id, trip_headsign, departure_time FROM stop_times JOIN trips ON stop_times.trip_id = trips.trip_id JOIN calendar ON trips.service_id = calendar.service_id WHERE stop_id = ? AND trips.route_id IN ({','.join(['?']*len(route_ids))}) AND calendar.{weekday} = '1' AND departure_time > ? LIMIT ?",
-            [stop_id, *route_ids, from_time.strftime("%H:%M:%S"), amount],
+            f"""
+            SELECT stop_times.trip_id, route_id, trip_headsign, departure_time, {delta_days} as delta_days
+            FROM stop_times
+            JOIN trips ON stop_times.trip_id = trips.trip_id
+            JOIN calendar ON trips.service_id = calendar.service_id
+            WHERE stop_id = ?
+            AND trips.route_id IN ({','.join(['?']*len(route_ids))})
+            AND calendar.{weekday} = '1'
+            AND calendar.start_date < ?
+            AND departure_time > ?
+            LIMIT ?
+            """,
+            [stop_id, *route_ids, today, from_time.strftime("%H:%M:%S"), amount],
         )
-    else:
-        cursor.execute(
-            f"SELECT route_id, trip_headsign, departure_time FROM stop_times JOIN trips ON stop_times.trip_id = trips.trip_id JOIN calendar ON trips.service_id = calendar.service_id WHERE stop_id = ? AND trips.route_id IN ({','.join(['?']*len(route_ids))}) AND calendar.{weekday} = '1' LIMIT ?",
-            [stop_id, *route_ids, amount],
-        )
-    stop_times = cursor.fetchall()
+        stop_times += cursor.fetchall()
+        if len(stop_times) >= amount:
+            break
+        # If there are no more stop times for today, move to the next day
+        delta_days += 1
+        if delta_days == 7:
+            _LOGGER.debug(
+                "Not enough departures found. Consider decreasing the amount of requested departures"
+            )
+            break
+        next_day = datetime.strptime(today, "%Y%m%d") + timedelta(days=1)
+        today = next_day.strftime("%Y%m%d")
+        weekday = next_day.strftime("%A").lower()
     conn.close()
-    return stop_times
+    return stop_times[:amount]
