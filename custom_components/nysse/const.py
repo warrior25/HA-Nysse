@@ -37,3 +37,6 @@ LINES_URL = "https://data.itsfactory.fi/journeys/api/1/lines?stopPointId={0}"
 SERVICE_ALERTS_URL = (
     "https://data.itsfactory.fi/journeys/api/1/gtfs-rt/service-alerts/json"
 )
+GTFS_URL = (
+    "https://data.itsfactory.fi/journeys/files/gtfs/latest/extended_gtfs_tampere.zip"
+)

@@ -1,4 +1,5 @@
 """Platform for sensor integration."""
+
 from __future__ import annotations
 
 from datetime import timedelta
@@ -23,14 +24,12 @@ from .const import (
     EXPECTED_ARRIVAL_TIME,
     EXPECTED_DEPARTURE_TIME,
     JOURNEY,
-    JOURNEYS_URL,
     PLATFORM_NAME,
     SERVICE_ALERTS_URL,
     STOP_URL,
     TRAM_LINES,
-    WEEKDAYS,
 )
-from .fetch_api import fetch_stop_points
+from .fetch_api import get_stop_times, get_stops
 from .network import get
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,12 +53,8 @@ async def async_setup_entry(
         sensors.append(
             NysseSensor(
                 config_entry.options["station"],
-                config_entry.options["max"]
-                if "max" in config_entry.options
-                else DEFAULT_MAX,
-                config_entry.options["timelimit"]
-                if "timelimit" in config_entry.options
-                else DEFAULT_TIMELIMIT,
+                config_entry.options.get("max", DEFAULT_MAX),
+                config_entry.options.get("timelimit", DEFAULT_TIMELIMIT),
                 config_entry.options["lines"],
             )
         )
@@ -67,10 +62,8 @@ async def async_setup_entry(
         sensors.append(
             NysseSensor(
                 config_entry.data["station"],
-                config_entry.data["max"] if "max" in config_entry.data else DEFAULT_MAX,
-                config_entry.data["timelimit"]
-                if "timelimit" in config_entry.data
-                else DEFAULT_TIMELIMIT,
+                config_entry.data.get("max", DEFAULT_MAX),
+                config_entry.data.get("timelimit", DEFAULT_TIMELIMIT),
                 config_entry.data["lines"],
             )
         )
@@ -96,58 +89,28 @@ class NysseSensor(SensorEntity):
         self._current_weekday_int = -1
         self._last_update_time = None
 
-        self._fetch_fail_counter = 0
-        self._fetch_pause_counter = 0
-
     async def fetch_stops(self, force=False):
         """Fetch stops if not fetched already."""
         if len(self._stops) == 0 or force:
             _LOGGER.debug("Fetching stops")
-            self._stops = await fetch_stop_points(False)
+            self._stops = await get_stops()
 
-    def remove_unwanted_data(self, departures, journeys):
+    def remove_unwanted_data(self, departures):
         """Remove stale and unwanted data."""
-        removed_journey_count = 0
         removed_departures_count = 0
-
-        # Remove unwanted journeys based on departure time, stop code and line number
-        for journey in journeys[:]:
-            if (
-                journey["departureTime"]
-                < self._last_update_time + timedelta(minutes=self.timelimit)
-                or (journey["stopCode"] != self.stop_code)
-                or (journey["line"] not in self.lines)
-            ):
-                journeys.remove(journey)
-                removed_journey_count += 1
 
         # Remove unwanted departures based on departure time and line number
         for departure in departures[:]:
-            if departure["line"] in self.lines:
-                # Remove journeys matching departures
-                matching_journeys = [
-                    journey
-                    for journey in journeys
-                    if journey["departureTime"] == departure["aimedArrivalTime"]
-                ]
-                for journey in matching_journeys:
-                    journeys.remove(journey)
-                    removed_journey_count += 1
-
+            departure_local = dt_util.as_local(
+                parser.parse(departure["departure_time"])
+            )
             if (
-                departure["departureTime"]
+                departure_local
                 < self._last_update_time + timedelta(minutes=self.timelimit)
-                or departure["line"] not in self.lines
+                or departure["route_id"] not in self.lines
             ):
                 departures.remove(departure)
                 removed_departures_count += 1
-
-        if removed_journey_count > 0:
-            _LOGGER.debug(
-                "%s: Removed %s stale or unwanted journeys",
-                self.stop_code,
-                removed_journey_count,
-            )
 
         if removed_departures_count > 0:
             _LOGGER.debug(
@@ -156,7 +119,7 @@ class NysseSensor(SensorEntity):
                 removed_departures_count,
             )
 
-        return departures, journeys
+        return departures[: self.max_items]
 
     async def fetch_departures(self):
         """Fetch live stop monitoring data."""
@@ -177,52 +140,6 @@ class NysseSensor(SensorEntity):
         unformatted_departures = json.loads(data)
         return self.format_departures(unformatted_departures)
 
-    async def fetch_journeys(self):
-        """Fetch static timetable data."""
-        journeys = []
-
-        async def fetch_data_for_weekday(weekday_index):
-            journeys_index = 0
-            weekday_string = WEEKDAYS[weekday_index]
-            while True:
-                url = JOURNEYS_URL.format(
-                    self.stop_code, weekday_string, journeys_index
-                )
-                _LOGGER.debug(
-                    "%s: Fetching timetable data from %s",
-                    self.stop_code,
-                    url + "&indent=yes",
-                )
-                data = await get(url)
-                if not data:
-                    _LOGGER.warning(
-                        "%s: Nysse API error: failed to fetch timetables: no data received from %s",
-                        self.stop_code,
-                        url + "&indent=yes",
-                    )
-                    return
-
-                unformatted_journeys = json.loads(data)
-                formatted_journeys = self.format_journeys(
-                    unformatted_journeys, weekday_index
-                )
-
-                for journey in formatted_journeys:
-                    journeys.append(journey)
-
-                try:
-                    if unformatted_journeys["data"]["headers"]["paging"]["moreData"]:
-                        journeys_index += PAGE_SIZE
-                    else:
-                        break
-                except KeyError:
-                    break
-
-        for i in range(self._current_weekday_int, self._current_weekday_int + 7):
-            await fetch_data_for_weekday(i % 7)
-
-        return journeys
-
     def format_departures(self, departures):
         """Format live stop monitoring data."""
         try:
@@ -231,17 +148,17 @@ class NysseSensor(SensorEntity):
             for departure in body:
                 try:
                     formatted_departure = {
-                        "line": departure["lineRef"],
-                        "destinationCode": departure["destinationShortName"],
-                        "departureTime": self.get_departure_time(departure, DEPARTURE),
-                        "aimedArrivalTime": self.get_departure_time(
-                            departure, DEPARTURE, time_type=AIMED_ARRIVAL_TIME
+                        "route_id": departure["lineRef"],
+                        "trip_headsign": self.get_stop_name(
+                            departure["destinationShortName"]
                         ),
+                        "departure_time": departure["call"][EXPECTED_DEPARTURE_TIME],
+                        "aimed_departure_time": departure["call"][AIMED_DEPARTURE_TIME],
                         "realtime": True,
                     }
                     if (
-                        formatted_departure["departureTime"] is not None
-                        and formatted_departure["aimedArrivalTime"] is not None
+                        formatted_departure["departure_time"] is not None
+                        and formatted_departure["aimed_departure_time"] is not None
                     ):
                         formatted_data.append(formatted_departure)
                 except KeyError as err:
@@ -325,16 +242,6 @@ class NysseSensor(SensorEntity):
                 except (ValueError, KeyError):
                     pass
                 return None
-
-            if item_type == JOURNEY:
-                parsed_time = parser.parse(
-                    (self._last_update_time + delta).strftime("%Y-%m-%dT")
-                    + item["arrivalTime"]
-                    + self._last_update_time.strftime("%z")[:3]
-                    + ":"
-                    + self._last_update_time.strftime("%z")[3:]
-                )
-                return parsed_time
         except (ValueError, KeyError):
             return None
 
@@ -349,39 +256,34 @@ class NysseSensor(SensorEntity):
                 return
 
             departures = await self.fetch_departures()
-            departures, self._journeys = self.remove_unwanted_data(
-                departures, self._journeys
-            )
-
-            if self._fetch_pause_counter == 0:
-                if len(self._journeys) < self.max_items:
-                    _LOGGER.debug(
-                        "%s: Not enough timetable data remaining to reach max items. Trying to fetch new data",
-                        self.stop_code,
+            departures = self.remove_unwanted_data(departures)
+            if len(departures) < self.max_items:
+                self._journeys = await get_stop_times(
+                    self.stop_code,
+                    self.lines,
+                    self.max_items - len(departures),
+                    self._last_update_time,
+                )
+                for journey in self._journeys[:]:
+                    print(
+                        journey["route_id"]
+                        + " - "
+                        + journey["trip_headsign"]
+                        + " - "
+                        + journey["departure_time"]
                     )
-                    journeys = await self.fetch_journeys()
-
-                    departures, self._journeys = self.remove_unwanted_data(
-                        departures, journeys
-                    )
-
-                    if len(self._journeys) == 0:
-                        self._fetch_fail_counter += 1
-                        _LOGGER.warning(
-                            "%s: Nysse API error: failed to fetch timetable data: %s",
-                            self.stop_code,
-                            self._fetch_fail_counter,
-                        )
-                        if self._fetch_fail_counter == 10:
-                            self._fetch_fail_counter = 0
-                            self._fetch_pause_counter = 30
-                            _LOGGER.error(
-                                "%s: Getting timetable data failed too many times. Next attempt in %s minutes. Reload integration to retry immediately",
-                                self.stop_code,
-                                self._fetch_pause_counter * SCAN_INTERVAL.seconds / 60,
-                            )
+                    for departure in departures:
+                        departure_time = parser.parse(departure["aimed_departure_time"])
+                        journey_time = parser.parse(journey["departure_time"])
+                        if (
+                            journey_time == departure_time
+                            and journey["route_id"] == departure["route_id"]
+                        ):
+                            self._journeys.remove(journey)
             else:
-                self._fetch_pause_counter -= 1
+                self._journeys.clear()
+
+            self._all_data = self.data_to_display_format(departures + self._journeys)
 
             _LOGGER.debug(
                 "%s: Got %s valid departures and %s valid journeys",
@@ -390,37 +292,20 @@ class NysseSensor(SensorEntity):
                 len(self._journeys),
             )
             _LOGGER.debug("%s: Data fetching complete", self.stop_code)
-            self._all_data = self.combine_data(departures, self._journeys)
         except OSError as err:
             _LOGGER.error("%s: Failed to update sensor: %s", self.stop_code, err)
-
-    def combine_data(self, departures, journeys):
-        """Combine live and static data."""
-        combined_data = departures[: self.max_items]
-        i = 0
-        while len(combined_data) < self.max_items:
-            if i < len(journeys):
-                combined_data.append(journeys[i])
-                i += 1
-            else:
-                _LOGGER.info(
-                    "%s: Not enough timetable data was found. Try decreasing the number of requested departures",
-                    self.stop_code,
-                )
-                break
-        return self.data_to_display_format(combined_data)
 
     def data_to_display_format(self, data):
         """Format data to be displayed in sensor attributes."""
         formatted_data = []
         for item in data:
             departure = {
-                "destination": self._stops[item["destinationCode"]],
-                "line": item["line"],
-                "departure": item["departureTime"].strftime("%H:%M"),
+                "destination": item["trip_headsign"],
+                "line": item["route_id"],
+                "departure": parser.parse(item["departure_time"]).strftime("%H:%M"),
                 "time_to_station": self.time_to_station(item),
-                "icon": self.get_line_icon(item["line"]),
-                "realtime": item["realtime"],
+                "icon": self.get_line_icon(item["route_id"]),
+                "realtime": item["realtime"] if "realtime" in item else False,
             }
             formatted_data.append(departure)
         return formatted_data
@@ -433,18 +318,27 @@ class NysseSensor(SensorEntity):
 
     def time_to_station(self, item):
         """Get time until departure."""
-        next_departure_time = (item["departureTime"] - self._last_update_time).seconds
+        departure_local = dt_util.as_local(parser.parse(item["departure_time"]))
+        next_departure_time = (departure_local - self._last_update_time).seconds
         return int(next_departure_time / 60)
+
+    def get_stop_name(self, stop_id):
+        """Get the name of the stop."""
+        return next(
+            (stop["stop_name"] for stop in self._stops if stop["stop_id"] == stop_id),
+            "unknown stop",
+        )
 
     @property
     def unique_id(self) -> str:
         """Unique id for the sensor."""
-        return self._unique_id
+        return PLATFORM_NAME + "_" + self.stop_code
 
     @property
     def name(self) -> str:
         """Return the name of the sensor."""
-        return f"{self._stops[self.stop_code]} ({self.stop_code})"
+        stop_name = self.get_stop_name(self.stop_code)
+        return f"{stop_name} ({self.stop_code})"
 
     @property
     def icon(self) -> str:
@@ -464,7 +358,7 @@ class NysseSensor(SensorEntity):
         attributes = {
             "last_refresh": self._last_update_time,
             "departures": self._all_data,
-            "station_name": self._stops[self.stop_code],
+            "station_name": self.get_stop_name(self.stop_code),
         }
         return attributes
 

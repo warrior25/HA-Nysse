@@ -16,7 +16,21 @@ from .const import (
     DEFAULT_TIMELIMIT,
     DOMAIN,
 )
-from .fetch_api import fetch_lines, fetch_stop_points
+from .fetch_api import get_route_ids, get_stops
+
+
+def format_stops(stops):
+    """Format the stops data into a list of dictionaries with label and value."""
+    return sorted(
+        [
+            {
+                "label": f"{stop['stop_name']} ({stop['stop_id']})",
+                "value": stop["stop_id"],
+            }
+            for stop in stops
+        ],
+        key=lambda x: x["label"],
+    )
 
 
 @config_entries.HANDLERS.register(DOMAIN)
@@ -32,9 +46,11 @@ class NysseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input: Optional[dict[str, Any]] = None):
         errors = {}
 
-        self.stations = await fetch_stop_points(True)
-        if len(self.stations) == 0:
+        stops = await get_stops()
+        # TODO: check error handling
+        if len(stops) == 0:
             errors["base"] = "no_stop_points"
+        self.stations = format_stops(stops)
 
         data_schema = {
             vol.Required(CONF_STATION): selector(
@@ -75,7 +91,7 @@ class NysseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_options(self, user_input: Optional[dict[str, Any]] = None):
         errors = {}
 
-        lines = await fetch_lines(self.data[CONF_STATION])
+        lines = await get_route_ids(self.data[CONF_STATION])
         if len(lines) == 0:
             errors["base"] = "no_lines"
 
@@ -148,9 +164,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            self.stations = await fetch_stop_points(True)
-            if len(self.stations) == 0:
+            stops = await get_stops()
+            # TODO: check error handling
+            if len(stops) == 0:
                 errors["base"] = "no_stop_points"
+            self.stations = format_stops(stops)
 
             for station in self.stations:
                 if station["value"] == self.config_entry.data[CONF_STATION]:
