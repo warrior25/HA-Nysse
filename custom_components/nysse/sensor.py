@@ -171,15 +171,23 @@ class NysseSensor(SensorEntity):
             departures = await self._fetch_departures()
             departures = self._remove_unwanted_departures(departures)
             if len(departures) < self._max_items:
-                from_time = self._last_update_time + timedelta(minutes=self._timelimit)
-                if len(departures) > 0:
-                    from_time = parser.parse(departures[-1]["aimed_departure_time"])
                 self._journeys = await get_stop_times(
                     self._stop_code,
                     self._lines,
-                    self._max_items - len(departures),
-                    from_time,
+                    self._max_items,
+                    self._last_update_time + timedelta(minutes=self._timelimit),
                 )
+                for journey in self._journeys[:]:
+                    for departure in departures:
+                        departure_time = parser.parse(departure["aimed_departure_time"])
+                        journey_time = dt_util.as_local(
+                            parser.parse(journey["departure_time"])
+                        )
+                        if (
+                            journey_time == departure_time
+                            and journey["route_id"] == departure["route_id"]
+                        ):
+                            self._journeys.remove(journey)
             else:
                 self._journeys.clear()
 
