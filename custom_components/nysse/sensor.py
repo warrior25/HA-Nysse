@@ -14,12 +14,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 import homeassistant.util.dt as dt_util
 
 from .const import (
-    AIMED_DEPARTURE_TIME,
     DEFAULT_ICON,
     DEFAULT_MAX,
     DEFAULT_TIMELIMIT,
     DOMAIN,
-    EXPECTED_DEPARTURE_TIME,
     PLATFORM_NAME,
     SERVICE_ALERTS_URL,
     STOP_URL,
@@ -136,8 +134,8 @@ class NysseSensor(SensorEntity):
                         "trip_headsign": self._get_stop_name(
                             departure["destinationShortName"]
                         ),
-                        "departure_time": departure["call"][EXPECTED_DEPARTURE_TIME],
-                        "aimed_departure_time": departure["call"][AIMED_DEPARTURE_TIME],
+                        "departure_time": departure["call"]["expectedDepartureTime"],
+                        "aimed_departure_time": departure["call"]["aimedDepartureTime"],
                         "realtime": True,
                     }
                     if (
@@ -173,21 +171,15 @@ class NysseSensor(SensorEntity):
             departures = await self._fetch_departures()
             departures = self._remove_unwanted_departures(departures)
             if len(departures) < self._max_items:
+                from_time = self._last_update_time + timedelta(minutes=self._timelimit)
+                if len(departures) > 0:
+                    from_time = parser.parse(departures[-1]["aimed_departure_time"])
                 self._journeys = await get_stop_times(
                     self._stop_code,
                     self._lines,
                     self._max_items - len(departures),
-                    self._last_update_time + timedelta(minutes=self._timelimit),
+                    from_time,
                 )
-                for journey in self._journeys[:]:
-                    for departure in departures:
-                        departure_time = parser.parse(departure["aimed_departure_time"])
-                        journey_time = parser.parse(journey["departure_time"])
-                        if (
-                            journey_time == departure_time
-                            and journey["route_id"] == departure["route_id"]
-                        ):
-                            self._journeys.remove(journey)
             else:
                 self._journeys.clear()
 
@@ -214,7 +206,7 @@ class NysseSensor(SensorEntity):
                 "realtime": item["realtime"] if "realtime" in item else False,
             }
             formatted_data.append(departure)
-        return formatted_data
+        return sorted(formatted_data, key=lambda x: x["time_to_station"])
 
     def _get_line_icon(self, line_no):
         if line_no in TRAM_LINES:

@@ -13,9 +13,6 @@ CONF_LINES = "lines"
 DEFAULT_ICON = "mdi:bus-clock"
 TRAM_LINES = ["1", "3"]
 
-AIMED_DEPARTURE_TIME = "aimedDepartureTime"
-EXPECTED_DEPARTURE_TIME = "expectedDepartureTime"
-
 STOP_URL = "https://data.itsfactory.fi/journeys/api/1/stop-monitoring?stops={0}"
 SERVICE_ALERTS_URL = (
     "https://data.itsfactory.fi/journeys/api/1/gtfs-rt/service-alerts/json"

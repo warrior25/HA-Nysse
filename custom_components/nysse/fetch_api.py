@@ -296,11 +296,12 @@ async def get_stop_times(stop_id, route_ids, amount, from_time):
             WHERE stop_id = ?
             AND trips.route_id IN ({','.join(['?']*len(route_ids))})
             AND calendar.{weekday} = '1'
-            AND calendar.start_date < ?
+            AND calendar.start_date <= ?
+            AND calendar.end_date >= ?
             AND departure_time > ?
             LIMIT ?
             """,
-            [stop_id, *route_ids, today, from_time.strftime("%H:%M:%S"), amount],
+            [stop_id, *route_ids, today, today, from_time.strftime("%H:%M:%S"), amount],
         )
         stop_times += cursor.fetchall()
         if len(stop_times) >= amount:
