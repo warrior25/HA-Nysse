@@ -47,7 +47,7 @@ content: >
   {% endfor %}
 ```
 
-![Service Alerts](https://github.com/warrior25/HA-Nysse/raw/main/docs/service_alerts.jpg)
+![Service Alerts](https://github.com/warrior25/HA-Nysse/blob/d8fe99019902ee1c8edbfe302f086c5f6c5a6a5c/docs/service_alerts.jpg)
 
 ```yaml
 type: custom:html-template-card
