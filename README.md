@@ -82,3 +82,12 @@ content: >
 
 - Nysse API sometimes functions incorrectly. Errors logged with `Nysse API error` can be resolved on their own over time.
 - Line icons are resolved from a hardcoded list of tram lines. If new tram lines are built, the list needs to be updated in `const.py`.
+
+## Troubleshooting
+
+If the integration is not working correctly, follow these steps as a first measure:
+
+1. Remove all files from `config/www/nysse`
+2. Reload the integration
+
+This forces the integration to fetch latest data from Nysse and recreates the database.
