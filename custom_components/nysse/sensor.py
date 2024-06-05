@@ -81,47 +81,59 @@ class NysseSensor(SensorEntity):
         self._last_update_time = None
 
     def _remove_unwanted_departures(self, departures):
-        removed_departures_count = 0
+        try:
+            removed_departures_count = 0
 
-        # Remove unwanted departures based on departure time and line number
-        for departure in departures[:]:
-            departure_local = dt_util.as_local(
-                parser.parse(departure["departure_time"])
-            )
-            if (
-                departure_local
-                < self._last_update_time + timedelta(minutes=self._timelimit)
-                or departure["route_id"] not in self._lines
-            ):
-                departures.remove(departure)
-                removed_departures_count += 1
+            # Remove unwanted departures based on departure time and line number
+            for departure in departures[:]:
+                departure_local = dt_util.as_local(
+                    parser.parse(departure["departure_time"])
+                )
+                if (
+                    departure_local
+                    < self._last_update_time + timedelta(minutes=self._timelimit)
+                    or departure["route_id"] not in self._lines
+                ):
+                    departures.remove(departure)
+                    removed_departures_count += 1
 
-        if removed_departures_count > 0:
-            _LOGGER.debug(
-                "%s: Removed %s stale or unwanted departures",
+            if removed_departures_count > 0:
+                _LOGGER.debug(
+                    "%s: Removed %s stale or unwanted departures",
+                    self._stop_code,
+                    removed_departures_count,
+                )
+
+            return departures[: self._max_items]
+        except (KeyError, OSError) as err:
+            _LOGGER.info(
+                "%s: Failed to process realtime departures: %s",
                 self._stop_code,
-                removed_departures_count,
+                err,
             )
-
-        return departures[: self._max_items]
+            return []
 
     async def _fetch_departures(self):
-        url = STOP_URL.format(self._stop_code)
-        _LOGGER.debug(
-            "%s: Fectching departures from %s",
-            self._stop_code,
-            url + "&indent=yes",
-        )
-        data = await get(url)
-        if not data:
-            _LOGGER.warning(
-                "%s: Nysse API error: failed to fetch realtime data: no data received from %s",
+        try:
+            url = STOP_URL.format(self._stop_code)
+            _LOGGER.debug(
+                "%s: Fectching departures from %s",
                 self._stop_code,
-                url,
+                url + "&indent=yes",
             )
-            return
-        unformatted_departures = json.loads(data)
-        return self._format_departures(unformatted_departures)
+            data = await get(url)
+            if not data:
+                _LOGGER.warning(
+                    "%s: Nysse API error: failed to fetch realtime data: no data received from %s",
+                    self._stop_code,
+                    url,
+                )
+                return
+            unformatted_departures = json.loads(data)
+            return self._format_departures(unformatted_departures)
+        except OSError as err:
+            _LOGGER.error("%s: Failed to fetch realtime data: %s", self._stop_code, err)
+            return []
 
     def _format_departures(self, departures):
         try:
@@ -158,12 +170,19 @@ class NysseSensor(SensorEntity):
                 err,
             )
             return []
+        except OSError as err:
+            _LOGGER.info(
+                "%s: failed to process realtime data: %s",
+                self._stop_code,
+                err,
+            )
+            return []
 
     async def async_update(self) -> None:
         """Fetch new state data for the sensor."""
-        self._last_update_time = dt_util.now()
-
         try:
+            self._last_update_time = dt_util.now()
+
             if len(self._stops) == 0:
                 _LOGGER.debug("Getting stops")
                 self._stops = await get_stops()
@@ -203,18 +222,22 @@ class NysseSensor(SensorEntity):
             _LOGGER.error("%s: Failed to update sensor: %s", self._stop_code, err)
 
     def _data_to_display_format(self, data):
-        formatted_data = []
-        for item in data:
-            departure = {
-                "destination": item["trip_headsign"],
-                "line": item["route_id"],
-                "departure": parser.parse(item["departure_time"]).strftime("%H:%M"),
-                "time_to_station": self._time_to_station(item),
-                "icon": self._get_line_icon(item["route_id"]),
-                "realtime": item["realtime"] if "realtime" in item else False,
-            }
-            formatted_data.append(departure)
-        return sorted(formatted_data, key=lambda x: x["time_to_station"])
+        try:
+            formatted_data = []
+            for item in data:
+                departure = {
+                    "destination": item["trip_headsign"],
+                    "line": item["route_id"],
+                    "departure": parser.parse(item["departure_time"]).strftime("%H:%M"),
+                    "time_to_station": self._time_to_station(item),
+                    "icon": self._get_line_icon(item["route_id"]),
+                    "realtime": item["realtime"] if "realtime" in item else False,
+                }
+                formatted_data.append(departure)
+            return sorted(formatted_data, key=lambda x: x["time_to_station"])
+        except OSError as err:
+            _LOGGER.debug("%s: Failed to format data:  %s", self._stop_code, err)
+            return []
 
     def _get_line_icon(self, line_no):
         if line_no in TRAM_LINES:
@@ -222,17 +245,37 @@ class NysseSensor(SensorEntity):
         return "mdi:bus"
 
     def _time_to_station(self, item):
-        departure_local = dt_util.as_local(parser.parse(item["departure_time"]))
-        if "delta_days" in item:
-            departure_local += timedelta(days=item["delta_days"])
-        next_departure_time = (departure_local - self._last_update_time).seconds
-        return int(next_departure_time / 60)
+        try:
+            departure_local = dt_util.as_local(parser.parse(item["departure_time"]))
+            if "delta_days" in item:
+                departure_local += timedelta(days=item["delta_days"])
+            next_departure_time = (departure_local - self._last_update_time).seconds
+            return int(next_departure_time / 60)
+        except OSError as err:
+            _LOGGER.debug(
+                "%s: Failed to calculate time to station: %s",
+                self._stop_code,
+                err,
+            )
+            return 0
 
     def _get_stop_name(self, stop_id):
-        return next(
-            (stop["stop_name"] for stop in self._stops if stop["stop_id"] == stop_id),
-            "unknown stop",
-        )
+        try:
+            return next(
+                (
+                    stop["stop_name"]
+                    for stop in self._stops
+                    if stop["stop_id"] == stop_id
+                ),
+                "unknown stop",
+            )
+        except (OSError, KeyError) as err:
+            _LOGGER.debug(
+                "%s: Failed to get stop name: %s",
+                self._stop_code,
+                err,
+            )
+            return "unknown stop"
 
     @property
     def unique_id(self) -> str:
@@ -278,8 +321,12 @@ class ServiceAlertSensor(SensorEntity):
         self._empty_response_counter = 0
 
     def _timestamp_to_local(self, timestamp):
-        utc = dt_util.utc_from_timestamp(int(str(timestamp)[:10]))
-        return dt_util.as_local(utc)
+        try:
+            utc = dt_util.utc_from_timestamp(int(str(timestamp)[:10]))
+            return dt_util.as_local(utc)
+        except OSError as err:
+            _LOGGER.error("Failed to convert timestamp to local time: %s", err)
+            return ""
 
     def _conditionally_clear_alerts(self):
         # TODO: Individual alerts may never be removed
