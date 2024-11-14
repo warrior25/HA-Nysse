@@ -105,7 +105,7 @@ class NysseSensor(SensorEntity):
                 )
 
             return departures[: self._max_items]
-        except (KeyError, OSError) as err:
+        except (KeyError, TypeError, OSError) as err:
             _LOGGER.info(
                 "%s: Failed to process realtime departures: %s",
                 self._stop_code,
@@ -235,7 +235,7 @@ class NysseSensor(SensorEntity):
                 }
                 formatted_data.append(departure)
             return sorted(formatted_data, key=lambda x: x["time_to_station"])
-        except OSError as err:
+        except (OSError, ValueError) as err:
             _LOGGER.debug("%s: Failed to format data:  %s", self._stop_code, err)
             return []
 
@@ -298,7 +298,7 @@ class NysseSensor(SensorEntity):
         """Return the state of the sensor."""
         if len(self._all_data) > 0:
             return self._all_data[0]["departure"]
-        return
+        return "unknown"
 
     @property
     def extra_state_attributes(self):
@@ -400,9 +400,10 @@ class ServiceAlertSensor(SensorEntity):
     @property
     def state(self) -> str:
         """Return the state of the sensor."""
-        if len(self._alerts) > 0:
+        try:
             return len(self._alerts)
-        return 0
+        except TypeError:
+            return 0
 
     @property
     def extra_state_attributes(self):
