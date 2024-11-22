@@ -218,7 +218,7 @@ class NysseSensor(SensorEntity):
                 len(departures),
                 len(self._journeys),
             )
-        except OSError as err:
+        except (OSError, ValueError) as err:
             _LOGGER.error("%s: Failed to update sensor: %s", self._stop_code, err)
 
     def _data_to_display_format(self, data):
