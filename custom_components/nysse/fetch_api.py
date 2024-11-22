@@ -1,5 +1,6 @@
 """Fetches data from the Nysse GTFS API."""
 
+import asyncio
 import csv
 from datetime import UTC, datetime, timedelta
 import logging
@@ -37,39 +38,64 @@ def _get_database():
     return conn, cursor
 
 
+_fetch_lock = asyncio.Lock()
+
+
 async def _fetch_gtfs():
     try:
-        path = _get_dir_path()
-        filename = "extended_gtfs_tampere.zip"
-        if os.path.isfile(path + filename) and datetime.now().minute != 0:
-            _LOGGER.debug("Skipped fetching GTFS data")
-            return  # Skip fetching if the file exists or it's not the top of the hour
-        timestamp = _get_file_modified_time(path + filename)
+        async with _fetch_lock:  # Ensure only one fetch runs at a time
+            path = _get_dir_path()
+            filename = "extended_gtfs_tampere.zip"
+            if os.path.isfile(path + filename) and datetime.now().minute != 0:
+                _LOGGER.debug("Skipped fetching GTFS data")
+                return  # Skip fetching if the file exists or it's not the top of the hour
+            timestamp = _get_file_modified_time(path + filename)
 
-        _LOGGER.debug("Fetching GTFS data from %s", GTFS_URL)
-        timeout = aiohttp.ClientTimeout(total=30)
-        async with (
-            aiohttp.ClientSession(timeout=timeout) as session,
-            session.get(GTFS_URL, headers={"If-Modified-Since": timestamp}) as response,
-        ):
-            if response.status == 200:
-                _LOGGER.info("Response OK")
-                with open(path + filename, "wb") as f:
-                    f.write(await response.read())
-                with zipfile.ZipFile(path + filename, "r") as zip_ref:
-                    zip_ref.extractall(path)
-                await _read_csv_to_db()
-            elif response.status == 304:
-                _LOGGER.debug(
-                    "%s has not received updates: %s", filename, response.status
-                )
-            else:
-                _LOGGER.error("Error fetching GTFS data: Status %s", response.status)
+            _LOGGER.debug("Fetching GTFS data from %s", GTFS_URL)
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with (
+                aiohttp.ClientSession(timeout=timeout) as session,
+                session.get(
+                    GTFS_URL, headers={"If-Modified-Since": timestamp}
+                ) as response,
+            ):
+                if response.status == 200:
+                    _LOGGER.info("Response OK")
+                    content = await response.read()
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(
+                        None, _save_response_to_file, path, filename, content
+                    )
+                    await _read_csv_to_db()
+                elif response.status == 304:
+                    _LOGGER.debug(
+                        "%s has not received updates: %s", filename, response.status
+                    )
+                else:
+                    _LOGGER.error(
+                        "Error fetching GTFS data: Status %s", response.status
+                    )
     except aiohttp.ClientError as err:
         _LOGGER.error("Error fetching GTFS data: %s", err)
 
 
+def _save_response_to_file(path, filename, content):
+    with open(path + filename, "wb") as f:
+        f.write(content)
+    with zipfile.ZipFile(path + filename, "r") as zip_ref:
+        zip_ref.extractall(path)
+
+
 async def _read_csv_to_db():
+    loop = asyncio.get_running_loop()
+    path = _get_dir_path()
+    stops = await loop.run_in_executor(None, _parse_csv_file, path + "stops.txt")
+    trips = await loop.run_in_executor(None, _parse_csv_file, path + "trips.txt")
+    calendar = await loop.run_in_executor(None, _parse_csv_file, path + "calendar.txt")
+    stop_times = await loop.run_in_executor(
+        None, _parse_csv_file, path + "stop_times.txt"
+    )
+
     conn, cursor = _get_database()
 
     # Stops
@@ -83,7 +109,6 @@ async def _read_csv_to_db():
         )
         """
     )
-    stops = _parse_csv_file(_get_dir_path() + "stops.txt")
     to_db = [
         (i["stop_id"], i["stop_name"], i["stop_lat"], i["stop_lon"]) for i in stops
     ]
@@ -104,7 +129,6 @@ async def _read_csv_to_db():
         )
         """
     )
-    trips = _parse_csv_file(_get_dir_path() + "trips.txt")
     to_db = [
         (
             i["trip_id"],
@@ -141,7 +165,6 @@ async def _read_csv_to_db():
         )
         """
     )
-    calendar = _parse_csv_file(_get_dir_path() + "calendar.txt")
     to_db = [
         (
             i["service_id"],
@@ -179,7 +202,6 @@ async def _read_csv_to_db():
         )
         """
     )
-    stop_times = _parse_csv_file(_get_dir_path() + "stop_times.txt")
     to_db = [
         (
             i["trip_id"],
