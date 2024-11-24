@@ -7,6 +7,7 @@ import json
 import logging
 
 from dateutil import parser
+import isodate
 
 from homeassistant import config_entries, core
 from homeassistant.components.sensor import SensorEntity
@@ -148,6 +149,7 @@ class NysseSensor(SensorEntity):
                         ),
                         "departure_time": departure["call"]["expectedDepartureTime"],
                         "aimed_departure_time": departure["call"]["aimedDepartureTime"],
+                        "delay": departure["delay"],
                         "realtime": True,
                     }
                     if (
@@ -233,6 +235,12 @@ class NysseSensor(SensorEntity):
                     "icon": self._get_line_icon(item["route_id"]),
                     "realtime": item["realtime"] if "realtime" in item else False,
                 }
+                if "aimed_departure_time" in item:
+                    departure["aimed_departure"] = parser.parse(
+                        item["aimed_departure_time"]
+                    ).strftime("%H:%M")
+                if "delay" in item:
+                    departure["delay"] = self._delay_to_display_format(item["delay"])
                 formatted_data.append(departure)
             return sorted(formatted_data, key=lambda x: x["time_to_station"])
         except (OSError, ValueError) as err:
@@ -254,6 +262,18 @@ class NysseSensor(SensorEntity):
         except OSError as err:
             _LOGGER.debug(
                 "%s: Failed to calculate time to station: %s",
+                self._stop_code,
+                err,
+            )
+            return 0
+
+    def _delay_to_display_format(self, item):
+        try:
+            delay = isodate.parse_duration(item)
+            return int(delay.total_seconds())
+        except (OSError, ValueError) as err:
+            _LOGGER.debug(
+                "%s: Failed to format delay: %s",
                 self._stop_code,
                 err,
             )

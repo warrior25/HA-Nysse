@@ -18,9 +18,33 @@ The integration can be set up from the frontend by searching for `Nysse`.
 
 ## Usage
 
-Each station creates a sensor which contains data for departures from that station. Explanations for non self-explanatory attributes are listed below.
+Each station creates a sensor which contains data for departures from that station. Explanations for attributes are listed below.
 
-`realtime` - Indicates if the data is pulled from realtime vehicle monitoring or timetable data
+### General
+
+| Attribute    | Description                                                                         |
+| ------------ | ----------------------------------------------------------------------------------- |
+| last_refresh | Timestamp (ISO 8601 format) indicating when real-time departures were last fetched. |
+| departures   | A list of departure objects representing the next available departures.             |
+| station_name | Name of the monitored stop.                                                         |
+
+### Departures
+
+| Attribute       | Description                                                                                                                                                                                                                                                                                                                 |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| destination     | Name of the line's destination stop.                                                                                                                                                                                                                                                                                        |
+| line            | Reference identifier for the line, such as `4` or `36A`.                                                                                                                                                                                                                                                                    |
+| departure       | Departure time in `%H:%M` (24-hour format), e.g., `16:09`. When _realtime_ is `false`, this value is taken directly from the timetable. When _realtime_ is `true`, it is calculated based on the real-time position of the vehicle.                                                                                         |
+| time_to_station | Remaining time in **whole minutes** until the vehicle departs from the stop. Rounded down (e.g., `1 min 0 sec` to `1 min 59 sec` displays as `1`). When _realtime_ is `false`, this value is taken directly from the timetable. When _realtime_ is `true`, it is calculated based on the real-time position of the vehicle. |
+| icon            | Icon representing the vehicle operating the line. Possible values are `mdi:tram` or `mdi:bus`.                                                                                                                                                                                                                              |
+| realtime        | Boolean (`true` or `false`) indicating whether the data is based on real-time vehicle position or a static timetable. Real-time vehicle data is used whenever available.                                                                                                                                                    |
+
+### Realtime departure specific
+
+| Attribute       | Description                                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| aimed_departure | Scheduled departure time according to the timetable, in `%H:%M` (24-hour format), e.g., `16:09`.                         |
+| delay           | Number of seconds the vehicle is ahead of or behind schedule. Negative values indicate the vehicle is ahead of schedule. |
 
 ## Frontend examples
 
