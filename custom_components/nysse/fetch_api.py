@@ -7,9 +7,13 @@ import logging
 import os
 import pathlib
 import sqlite3
+from typing import NamedTuple
 import zipfile
 
 import aiohttp
+from dateutil import parser
+
+import homeassistant.util.dt as dt_util
 
 from .const import DOMAIN, GTFS_URL
 
@@ -240,8 +244,7 @@ def _get_file_modified_time(file_path):
 def _parse_csv_file(file_path):
     with open(file_path, newline="", encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile)
-        data = [row.copy() for row in reader]
-    return data
+        return [row.copy() for row in reader]
 
 
 async def get_stops():
@@ -289,6 +292,16 @@ async def get_route_ids(stop_id):
     return route_ids
 
 
+class StopTime(NamedTuple):
+    route_id: str
+    trip_headsign: str
+    departure_time: datetime
+    aimed_departure_time: datetime | None
+    delay: int | None
+    delta_days: int
+    realtime: bool
+
+
 async def get_stop_times(stop_id, route_ids, amount, from_time):
     """Get the stop times for a given stop ID, route IDs, and amount.
 
@@ -306,17 +319,17 @@ async def get_stop_times(stop_id, route_ids, amount, from_time):
     conn, cursor = _get_database()
     today = datetime.now().strftime("%Y%m%d")
     weekday = datetime.strptime(today, "%Y%m%d").strftime("%A").lower()
-    stop_times = []
+    stop_times: list[StopTime] = []
     delta_days = 0
     while len(stop_times) < amount:
         cursor.execute(
             f"""
-            SELECT stop_times.trip_id, route_id, trip_headsign, departure_time, {delta_days} as delta_days
+            SELECT route_id, trip_headsign, departure_time, {delta_days} as delta_days
             FROM stop_times
             JOIN trips ON stop_times.trip_id = trips.trip_id
             JOIN calendar ON trips.service_id = calendar.service_id
             WHERE stop_id = ?
-            AND trips.route_id IN ({','.join(['?']*len(route_ids))})
+            AND trips.route_id IN ({",".join(["?"] * len(route_ids))})
             AND calendar.{weekday} = '1'
             AND calendar.start_date <= ?
             AND calendar.end_date >= ?
@@ -325,7 +338,27 @@ async def get_stop_times(stop_id, route_ids, amount, from_time):
             """,
             [stop_id, *route_ids, today, today, from_time.strftime("%H:%M:%S"), amount],
         )
-        stop_times += cursor.fetchall()
+
+        for row in cursor.fetchall():
+            route_id, trip_headsign, departure_time_str, row_delta_days = row
+
+            departure_time = dt_util.as_local(parser.parse(departure_time_str))
+            if departure_time.hour > 24:
+                departure_time = departure_time.replace(hour=departure_time.hour - 24)
+                row_delta_days += 1
+
+            stop_times.append(
+                StopTime(
+                    route_id,
+                    trip_headsign,
+                    departure_time,
+                    None,
+                    None,
+                    row_delta_days,
+                    False,
+                )
+            )
+
         if len(stop_times) >= amount:
             break
         # If there are no more stop times for today, move to the next day

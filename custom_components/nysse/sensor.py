@@ -7,6 +7,7 @@ import json
 import logging
 
 from dateutil import parser
+from dateutil.parser import ParserError
 import isodate
 
 from homeassistant import config_entries, core
@@ -24,7 +25,7 @@ from .const import (
     STOP_URL,
     TRAM_LINES,
 )
-from .fetch_api import get_stop_times, get_stops
+from .fetch_api import StopTime, get_stop_times, get_stops
 from .network import get
 
 _LOGGER = logging.getLogger(__name__)
@@ -81,19 +82,17 @@ class NysseSensor(SensorEntity):
 
         self._last_update_time = None
 
-    def _remove_unwanted_departures(self, departures):
+    def _remove_unwanted_departures(self, departures: list[StopTime]):
         try:
             removed_departures_count = 0
 
             # Remove unwanted departures based on departure time and line number
             for departure in departures[:]:
-                departure_local = dt_util.as_local(
-                    parser.parse(departure["departure_time"])
-                )
+                departure_local = dt_util.as_local(departure.departure_time)
                 if (
                     departure_local
                     < self._last_update_time + timedelta(minutes=self._timelimit)
-                    or departure["route_id"] not in self._lines
+                    or departure.route_id not in self._lines
                 ):
                     departures.remove(departure)
                     removed_departures_count += 1
@@ -129,7 +128,7 @@ class NysseSensor(SensorEntity):
                     self._stop_code,
                     url,
                 )
-                return
+                return None
             unformatted_departures = json.loads(data)
             return self._format_departures(unformatted_departures)
         except OSError as err:
@@ -139,25 +138,20 @@ class NysseSensor(SensorEntity):
     def _format_departures(self, departures):
         try:
             body = departures["body"][self._stop_code]
-            formatted_data = []
+            formatted_data: list[StopTime] = []
             for departure in body:
                 try:
-                    formatted_departure = {
-                        "route_id": departure["lineRef"],
-                        "trip_headsign": self._get_stop_name(
-                            departure["destinationShortName"]
-                        ),
-                        "departure_time": departure["call"]["expectedDepartureTime"],
-                        "aimed_departure_time": departure["call"]["aimedDepartureTime"],
-                        "delay": departure["delay"],
-                        "realtime": True,
-                    }
-                    if (
-                        formatted_departure["departure_time"] is not None
-                        and formatted_departure["aimed_departure_time"] is not None
-                    ):
-                        formatted_data.append(formatted_departure)
-                except KeyError as err:
+                    formatted_departure = StopTime(
+                        departure["lineRef"],
+                        self._get_stop_name(departure["destinationShortName"]),
+                        parser.parse(departure["call"]["expectedDepartureTime"]),
+                        parser.parse(departure["call"]["aimedDepartureTime"]),
+                        self._delay_to_display_format(departure["delay"]),
+                        0,
+                        True,
+                    )
+                    formatted_data.append(formatted_departure)
+                except (KeyError, ParserError) as err:
                     _LOGGER.info(
                         "%s: Failed to process realtime departure: %s",
                         self._stop_code,
@@ -200,13 +194,9 @@ class NysseSensor(SensorEntity):
                 )
                 for journey in self._journeys[:]:
                     for departure in departures:
-                        departure_time = parser.parse(departure["aimed_departure_time"])
-                        journey_time = dt_util.as_local(
-                            parser.parse(journey["departure_time"])
-                        )
                         if (
-                            journey_time == departure_time
-                            and journey["route_id"] == departure["route_id"]
+                            journey.departure_time == departure.aimed_departure_time
+                            and journey.route_id == departure.route_id
                         ):
                             self._journeys.remove(journey)
             else:
@@ -223,24 +213,24 @@ class NysseSensor(SensorEntity):
         except (OSError, ValueError) as err:
             _LOGGER.error("%s: Failed to update sensor: %s", self._stop_code, err)
 
-    def _data_to_display_format(self, data):
+    def _data_to_display_format(self, data: list[StopTime]):
         try:
             formatted_data = []
             for item in data:
                 departure = {
-                    "destination": item["trip_headsign"],
-                    "line": item["route_id"],
-                    "departure": parser.parse(item["departure_time"]).strftime("%H:%M"),
+                    "destination": item.trip_headsign,
+                    "line": item.route_id,
+                    "departure": item.departure_time.strftime("%H:%M"),
                     "time_to_station": self._time_to_station(item),
-                    "icon": self._get_line_icon(item["route_id"]),
-                    "realtime": item["realtime"] if "realtime" in item else False,
+                    "icon": self._get_line_icon(item.route_id),
+                    "realtime": item.realtime,
                 }
-                if "aimed_departure_time" in item:
-                    departure["aimed_departure"] = parser.parse(
-                        item["aimed_departure_time"]
-                    ).strftime("%H:%M")
-                if "delay" in item:
-                    departure["delay"] = self._delay_to_display_format(item["delay"])
+                if item.aimed_departure_time is not None:
+                    departure["aimed_departure"] = item.aimed_departure_time.strftime(
+                        "%H:%M"
+                    )
+                if item.delay is not None:
+                    departure["delay"] = item.delay
                 formatted_data.append(departure)
             return sorted(formatted_data, key=lambda x: x["time_to_station"])
         except (OSError, ValueError) as err:
@@ -252,11 +242,11 @@ class NysseSensor(SensorEntity):
             return "mdi:tram"
         return "mdi:bus"
 
-    def _time_to_station(self, item):
+    def _time_to_station(self, item: StopTime):
         try:
-            departure_local = dt_util.as_local(parser.parse(item["departure_time"]))
-            if "delta_days" in item:
-                departure_local += timedelta(days=item["delta_days"])
+            departure_local = dt_util.as_local(item.departure_time)
+            if item.delta_days > 0:
+                departure_local += timedelta(days=item.delta_days)
             next_departure_time = (departure_local - self._last_update_time).seconds
             return int(next_departure_time / 60)
         except OSError as err:
@@ -323,12 +313,12 @@ class NysseSensor(SensorEntity):
     @property
     def extra_state_attributes(self):
         """Sensor attributes."""
-        attributes = {
+        return {
             "last_refresh": self._last_update_time,
             "departures": self._all_data,
             "station_name": self._get_stop_name(self._stop_code),
+            "station_id": self._stop_code,
         }
-        return attributes
 
 
 class ServiceAlertSensor(SensorEntity):
@@ -363,7 +353,7 @@ class ServiceAlertSensor(SensorEntity):
                     "Nysse API error: failed to fetch service alerts: no data received from %s",
                     SERVICE_ALERTS_URL,
                 )
-                return
+                return None
             json_data = json.loads(data)
 
             self._last_update = self._timestamp_to_local(
@@ -428,8 +418,7 @@ class ServiceAlertSensor(SensorEntity):
     @property
     def extra_state_attributes(self):
         """Sensor attributes."""
-        attributes = {
+        return {
             "last_refresh": self._last_update,
             "alerts": self._alerts,
         }
-        return attributes
