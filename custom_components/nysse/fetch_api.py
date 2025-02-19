@@ -321,10 +321,11 @@ async def get_stop_times(stop_id, route_ids, amount, from_time):
     weekday = datetime.strptime(today, "%Y%m%d").strftime("%A").lower()
     stop_times: list[StopTime] = []
     delta_days = 0
+    start_time = from_time.strftime("%H:%M:%S")
     while len(stop_times) < amount:
         cursor.execute(
             f"""
-            SELECT route_id, trip_headsign, departure_time, {delta_days} as delta_days
+            SELECT route_id, trip_headsign, departure_time
             FROM stop_times
             JOIN trips ON stop_times.trip_id = trips.trip_id
             JOIN calendar ON trips.service_id = calendar.service_id
@@ -336,16 +337,21 @@ async def get_stop_times(stop_id, route_ids, amount, from_time):
             AND departure_time > ?
             LIMIT ?
             """,
-            [stop_id, *route_ids, today, today, from_time.strftime("%H:%M:%S"), amount],
+            [stop_id, *route_ids, today, today, start_time, amount],
         )
 
         for row in cursor.fetchall():
-            route_id, trip_headsign, departure_time_str, row_delta_days = row
+            route_id, trip_headsign, departure_time_str = row
+            row_delta_days = delta_days
+            hours, minutes, seconds = map(int, departure_time_str.split(":"))
 
-            departure_time = dt_util.as_local(parser.parse(departure_time_str))
-            if departure_time.hour > 24:
-                departure_time = departure_time.replace(hour=departure_time.hour - 24)
+            if hours > 23:
+                hours -= 24
                 row_delta_days += 1
+
+            valid_time_str = f"{hours:02}:{minutes:02}:{seconds:02}"
+
+            departure_time = dt_util.as_local(parser.parse(valid_time_str))
 
             stop_times.append(
                 StopTime(
@@ -371,5 +377,6 @@ async def get_stop_times(stop_id, route_ids, amount, from_time):
         next_day = datetime.strptime(today, "%Y%m%d") + timedelta(days=1)
         today = next_day.strftime("%Y%m%d")
         weekday = next_day.strftime("%A").lower()
+        start_time = "00:00:00"
     conn.close()
     return stop_times[:amount]
