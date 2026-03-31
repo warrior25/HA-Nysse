@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 import voluptuous as vol
 
@@ -43,7 +43,7 @@ class NysseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.stations = []
         self.title = "Nysse"
 
-    async def async_step_user(self, user_input: Optional[dict[str, Any]] = None):
+    async def async_step_user(self, user_input: dict[str, Any] | None = None):
         errors = {}
 
         stops = await get_stops()
@@ -88,7 +88,7 @@ class NysseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_options(self, user_input: Optional[dict[str, Any]] = None):
+    async def async_step_options(self, user_input: dict[str, Any] | None = None):
         errors = {}
 
         lines = await get_route_ids(self.data[CONF_STATION])
@@ -153,13 +153,13 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     """Handles options flow for the component."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
+        self._config_entry = config_entry
         self.data: dict[str, Any] = {}
         self.title = ""
         self.stations = []
 
     async def async_step_init(
-        self, user_input: dict[str, Any] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         errors: dict[str, str] = {}
 
@@ -171,24 +171,24 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             self.stations = format_stops(stops)
 
             for station in self.stations:
-                if station["value"] == self.config_entry.data[CONF_STATION]:
+                if station["value"] == self._config_entry.data[CONF_STATION]:
                     self.title = station["label"]
                     break
 
             self.data = {
-                "station": self.config_entry.data[CONF_STATION],
-                "lines": self.config_entry.data[CONF_LINES],
+                "station": self._config_entry.data[CONF_STATION],
+                "lines": self._config_entry.data[CONF_LINES],
                 "timelimit": user_input[CONF_TIMELIMIT],
                 "max": user_input[CONF_MAX],
             }
             return self.async_create_entry(title="", data=self.data)
 
-        if self.config_entry.options:
+        if self._config_entry.options:
             options_schema = vol.Schema(
                 {
                     vol.Optional(
                         CONF_TIMELIMIT,
-                        default=self.config_entry.options[CONF_TIMELIMIT],
+                        default=self._config_entry.options[CONF_TIMELIMIT],
                     ): selector(
                         {
                             "number": {
@@ -199,7 +199,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         }
                     ),
                     vol.Optional(
-                        CONF_MAX, default=self.config_entry.options[CONF_MAX]
+                        CONF_MAX, default=self._config_entry.options[CONF_MAX]
                     ): selector({"number": {"min": 1, "max": 30}}),
                 }
             )
@@ -208,7 +208,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 {
                     vol.Optional(
                         CONF_TIMELIMIT,
-                        default=self.config_entry.data[CONF_TIMELIMIT],
+                        default=self._config_entry.data[CONF_TIMELIMIT],
                     ): selector(
                         {
                             "number": {
@@ -219,7 +219,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         }
                     ),
                     vol.Optional(
-                        CONF_MAX, default=self.config_entry.data[CONF_MAX]
+                        CONF_MAX, default=self._config_entry.data[CONF_MAX]
                     ): selector({"number": {"min": 1, "max": 30}}),
                 }
             )
