@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 import json
 import logging
 
@@ -12,24 +12,32 @@ import isodate
 
 from homeassistant import config_entries, core
 from homeassistant.components.sensor import SensorEntity
+from homeassistant.core import CALLBACK_TYPE
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_time_interval
 import homeassistant.util.dt as dt_util
 
 from .const import (
+    CONF_LINES,
+    CONF_STATION,
     DEFAULT_ICON,
-    DEFAULT_MAX,
-    DEFAULT_TIMELIMIT,
     DOMAIN,
+    MAX,
     PLATFORM_NAME,
+    REALTIME,
     SERVICE_ALERTS_URL,
     STOP_URL,
+    TIMELIMIT,
     TRAM_LINES,
+    UPDATE_INTERVAL,
 )
 from .fetch_api import StopTime, get_stop_times, get_stops
 from .network import get
 
 _LOGGER = logging.getLogger(__name__)
-SCAN_INTERVAL = timedelta(seconds=30)
+
+# Applies to alerts sensor
+SCAN_INTERVAL = timedelta(minutes=5)
 
 
 async def async_setup_entry(
@@ -39,29 +47,23 @@ async def async_setup_entry(
 ) -> None:
     """Setups sensors from a config entry created in the integrations UI."""
     sensors = []
+    config_data = {**config_entry.data, **config_entry.options}
+
     configs = hass.data[DOMAIN]
     if len(configs) > 0:
         if config_entry.entry_id == next(iter(configs)):
             sensors.append(ServiceAlertSensor())
 
-    if "station" in config_entry.options:
-        sensors.append(
-            NysseSensor(
-                config_entry.options["station"],
-                config_entry.options.get("max", DEFAULT_MAX),
-                config_entry.options.get("timelimit", DEFAULT_TIMELIMIT),
-                config_entry.options["lines"],
-            )
+    sensors.append(
+        NysseSensor(
+            config_data[CONF_STATION],
+            config_data.get(MAX.name, MAX.default),
+            config_data.get(TIMELIMIT.name, TIMELIMIT.default),
+            config_data[CONF_LINES],
+            config_data.get(REALTIME.name, REALTIME.default),
+            config_data.get(UPDATE_INTERVAL.name, UPDATE_INTERVAL.default),
         )
-    else:
-        sensors.append(
-            NysseSensor(
-                config_entry.data["station"],
-                config_entry.data.get("max", DEFAULT_MAX),
-                config_entry.data.get("timelimit", DEFAULT_TIMELIMIT),
-                config_entry.data["lines"],
-            )
-        )
+    )
 
     async_add_entities(sensors, update_before_add=True)
 
@@ -69,18 +71,43 @@ async def async_setup_entry(
 class NysseSensor(SensorEntity):
     """Representation of a Sensor."""
 
-    def __init__(self, stop_code, maximum, timelimit, lines) -> None:
+    _attr_should_poll = False
+
+    def __init__(
+        self, stop_code, maximum, timelimit, lines, use_realtime, scan_interval
+    ) -> None:
         """Initialize the sensor."""
         self._stop_code = stop_code
         self._max_items = int(maximum)
         self._timelimit = int(timelimit)
         self._lines = lines
+        self._use_realtime = bool(use_realtime)
+        self._scan_interval = timedelta(seconds=int(scan_interval))
 
         self._journeys = []
         self._stops = []
         self._all_data = []
+        self._unsub_refresh: CALLBACK_TYPE | None = None
 
         self._last_update_time = None
+
+    async def async_added_to_hass(self) -> None:
+        """Set up the periodic update callback for this sensor."""
+        self._unsub_refresh = async_track_time_interval(
+            self.hass,
+            self._async_handle_interval,
+            self._scan_interval,
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Cancel periodic updates when the sensor is removed."""
+        if self._unsub_refresh is not None:
+            self._unsub_refresh()
+            self._unsub_refresh = None
+
+    async def _async_handle_interval(self, now: datetime) -> None:
+        """Handle scheduled updates."""
+        await self.async_update_ha_state(True)
 
     def _remove_unwanted_departures(self, departures: list[StopTime]):
         try:
@@ -137,7 +164,7 @@ class NysseSensor(SensorEntity):
 
     def _format_departures(self, departures):
         try:
-            body = departures["body"][self._stop_code]
+            body = departures.get("body", {}).get(self._stop_code, [])
             formatted_data: list[StopTime] = []
             for departure in body:
                 try:
@@ -183,8 +210,11 @@ class NysseSensor(SensorEntity):
                 _LOGGER.debug("Getting stops")
                 self._stops = await get_stops()
 
-            departures = await self._fetch_departures()
-            departures = self._remove_unwanted_departures(departures)
+            departures: list[StopTime] = []
+            if self._use_realtime:
+                departures = await self._fetch_departures()
+                departures = self._remove_unwanted_departures(departures)
+
             if len(departures) < self._max_items:
                 self._journeys = await get_stop_times(
                     self._stop_code,
@@ -210,7 +240,7 @@ class NysseSensor(SensorEntity):
                 len(departures),
                 len(self._journeys),
             )
-        except (OSError, ValueError) as err:
+        except OSError as err:
             _LOGGER.error("%s: Failed to update sensor: %s", self._stop_code, err)
 
     def _data_to_display_format(self, data: list[StopTime]):
@@ -328,7 +358,6 @@ class ServiceAlertSensor(SensorEntity):
         """Initialize the sensor."""
         self._last_update = ""
         self._alerts = []
-        self._empty_response_counter = 0
 
     def _timestamp_to_local(self, timestamp):
         try:
@@ -338,15 +367,10 @@ class ServiceAlertSensor(SensorEntity):
             _LOGGER.error("Failed to convert timestamp to local time: %s", err)
             return ""
 
-    def _conditionally_clear_alerts(self):
-        # TODO: Individual alerts may never be removed
-        if self._empty_response_counter >= 20:
-            self._empty_response_counter = 0
-            self._alerts.clear()
-
     async def _fetch_service_alerts(self):
         try:
             alerts = []
+            _LOGGER.debug("Fetching service alerts from %s", SERVICE_ALERTS_URL)
             data = await get(SERVICE_ALERTS_URL)
             if not data:
                 _LOGGER.warning(
@@ -381,9 +405,7 @@ class ServiceAlertSensor(SensorEntity):
             return alerts
 
         except KeyError:
-            self._empty_response_counter += 1
-            self._conditionally_clear_alerts()
-            return self._alerts
+            return []
         except OSError as err:
             _LOGGER.error("Failed to fetch service alerts: %s", err)
             return []

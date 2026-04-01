@@ -4,8 +4,7 @@ import asyncio
 import csv
 from datetime import UTC, datetime, timedelta
 import logging
-import os
-import pathlib
+from pathlib import Path
 import sqlite3
 from typing import NamedTuple
 import zipfile
@@ -21,20 +20,18 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _get_data_path():
-    return os.path.abspath(
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
-    )
+    return Path(__file__).resolve().parent.parent.parent
 
 
 def _get_dir_path():
-    dir_path = os.path.join(_get_data_path(), f"www/{DOMAIN}/")
-    pathlib.Path(dir_path).mkdir(parents=True, exist_ok=True)
+    dir_path = _get_data_path() / "www" / DOMAIN
+    dir_path.mkdir(parents=True, exist_ok=True)
     return dir_path
 
 
 def _get_database():
     # Connect to the SQLite database (or create it if it doesn't exist)
-    conn = sqlite3.connect(_get_dir_path() + "database.db")
+    conn = sqlite3.connect(_get_dir_path() / "database.db")
     conn.row_factory = sqlite3.Row
 
     # Create a cursor object to execute SQL queries
@@ -50,10 +47,11 @@ async def _fetch_gtfs():
         async with _fetch_lock:  # Ensure only one fetch runs at a time
             path = _get_dir_path()
             filename = "extended_gtfs_tampere.zip"
-            if os.path.isfile(path + filename) and datetime.now().minute != 0:
+            file_path = path / filename
+            if Path.is_file(file_path) and datetime.now().minute != 0:
                 _LOGGER.debug("Skipped fetching GTFS data")
                 return  # Skip fetching if the file exists or it's not the top of the hour
-            timestamp = _get_file_modified_time(path + filename)
+            timestamp = _get_file_modified_time(file_path)
 
             _LOGGER.debug("Fetching GTFS data from %s", GTFS_URL)
             timeout = aiohttp.ClientTimeout(total=30)
@@ -68,7 +66,7 @@ async def _fetch_gtfs():
                     content = await response.read()
                     loop = asyncio.get_running_loop()
                     await loop.run_in_executor(
-                        None, _save_response_to_file, path, filename, content
+                        None, _save_response_to_file, file_path, content
                     )
                     await _read_csv_to_db()
                 elif response.status == 304:
@@ -83,26 +81,14 @@ async def _fetch_gtfs():
         _LOGGER.error("Error fetching GTFS data: %s", err)
 
 
-def _save_response_to_file(path, filename, content):
-    with open(path + filename, "wb") as f:
+def _save_response_to_file(file_path: Path, content):
+    with file_path.open("wb") as f:
         f.write(content)
-    with zipfile.ZipFile(path + filename, "r") as zip_ref:
-        zip_ref.extractall(path)
+    with zipfile.ZipFile(file_path, "r") as zip_ref:
+        zip_ref.extractall(file_path.parent)
 
 
-async def _read_csv_to_db():
-    loop = asyncio.get_running_loop()
-    path = _get_dir_path()
-    stops = await loop.run_in_executor(None, _parse_csv_file, path + "stops.txt")
-    trips = await loop.run_in_executor(None, _parse_csv_file, path + "trips.txt")
-    calendar = await loop.run_in_executor(None, _parse_csv_file, path + "calendar.txt")
-    stop_times = await loop.run_in_executor(
-        None, _parse_csv_file, path + "stop_times.txt"
-    )
-
-    conn, cursor = _get_database()
-
-    # Stops
+async def _create_db(cursor):
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS stops (
@@ -113,15 +99,6 @@ async def _read_csv_to_db():
         )
         """
     )
-    to_db = [
-        (i["stop_id"], i["stop_name"], i["stop_lat"], i["stop_lon"]) for i in stops
-    ]
-    cursor.executemany(
-        "INSERT OR REPLACE INTO stops (stop_id, stop_name, stop_lat, stop_lon) VALUES (?, ?, ?, ?)",
-        to_db,
-    )
-
-    # Routes
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS trips (
@@ -133,26 +110,6 @@ async def _read_csv_to_db():
         )
         """
     )
-    to_db = [
-        (
-            i["trip_id"],
-            i["route_id"],
-            i["service_id"],
-            i["trip_headsign"],
-            i["direction_id"],
-        )
-        for i in trips
-    ]
-    cursor.executemany(
-        """
-        INSERT OR REPLACE INTO trips
-        (trip_id, route_id, service_id, trip_headsign, direction_id)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        to_db,
-    )
-
-    # Calendar
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS calendar (
@@ -169,31 +126,6 @@ async def _read_csv_to_db():
         )
         """
     )
-    to_db = [
-        (
-            i["service_id"],
-            i["monday"],
-            i["tuesday"],
-            i["wednesday"],
-            i["thursday"],
-            i["friday"],
-            i["saturday"],
-            i["sunday"],
-            i["start_date"],
-            i["end_date"],
-        )
-        for i in calendar
-    ]
-    cursor.executemany(
-        """
-        INSERT OR REPLACE INTO calendar
-        (service_id, monday, tuesday, wednesday, thursday, friday, saturday, sunday, start_date, end_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        to_db,
-    )
-
-    # Stop times
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS stop_times (
@@ -206,43 +138,186 @@ async def _read_csv_to_db():
         )
         """
     )
-    to_db = [
-        (
-            i["trip_id"],
-            i["arrival_time"],
-            i["departure_time"],
-            i["stop_id"],
-            i["stop_sequence"],
-        )
-        for i in stop_times
-    ]
-    to_db.sort(key=lambda x: x[2])  # Sort by departure_time
-    cursor.executemany(
-        """
-        INSERT OR REPLACE INTO stop_times
-        (trip_id, arrival_time, departure_time, stop_id, stop_sequence)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        to_db,
+
+
+async def _read_csv_to_db():
+    loop = asyncio.get_running_loop()
+    path = _get_dir_path()
+    stops = await loop.run_in_executor(None, _parse_csv_file, path / "stops.txt")
+    trips = await loop.run_in_executor(None, _parse_csv_file, path / "trips.txt")
+    calendar = await loop.run_in_executor(None, _parse_csv_file, path / "calendar.txt")
+    stop_times = await loop.run_in_executor(
+        None, _parse_csv_file, path / "stop_times.txt"
     )
 
-    conn.commit()
-    conn.close()
+    try:
+        conn, cursor = _get_database()
+        await _create_db(cursor)
+
+        # Stops
+        _delete_obsolete_stops(cursor, stops)
+
+        to_db = [
+            (i["stop_id"], i["stop_name"], i["stop_lat"], i["stop_lon"]) for i in stops
+        ]
+        cursor.executemany(
+            "INSERT OR REPLACE INTO stops (stop_id, stop_name, stop_lat, stop_lon) VALUES (?, ?, ?, ?)",
+            to_db,
+        )
+        _LOGGER.debug("Inserted/Updated stops: %s", cursor.rowcount)
+
+        # Routes
+        _delete_obsolete_trips(cursor, trips)
+
+        to_db = [
+            (
+                i["trip_id"],
+                i["route_id"],
+                i["service_id"],
+                i["trip_headsign"],
+                i["direction_id"],
+            )
+            for i in trips
+        ]
+        cursor.executemany(
+            """
+            INSERT OR REPLACE INTO trips
+            (trip_id, route_id, service_id, trip_headsign, direction_id)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            to_db,
+        )
+        _LOGGER.debug("Inserted/Updated trips: %s", cursor.rowcount)
+
+        # Calendar
+        _delete_obsolete_services(cursor, calendar)
+
+        to_db = [
+            (
+                i["service_id"],
+                i["monday"],
+                i["tuesday"],
+                i["wednesday"],
+                i["thursday"],
+                i["friday"],
+                i["saturday"],
+                i["sunday"],
+                i["start_date"],
+                i["end_date"],
+            )
+            for i in calendar
+        ]
+        cursor.executemany(
+            """
+            INSERT OR REPLACE INTO calendar
+            (service_id, monday, tuesday, wednesday, thursday, friday, saturday, sunday, start_date, end_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            to_db,
+        )
+        _LOGGER.debug("Inserted/Updated services: %s", cursor.rowcount)
+
+        # Stop times
+        _delete_stop_times(cursor)
+
+        to_db = [
+            (
+                i["trip_id"],
+                i["arrival_time"],
+                i["departure_time"],
+                i["stop_id"],
+                i["stop_sequence"],
+            )
+            for i in stop_times
+        ]
+        to_db.sort(key=lambda x: x[2])  # Sort by departure_time
+        cursor.executemany(
+            """
+            INSERT OR REPLACE INTO stop_times
+            (trip_id, arrival_time, departure_time, stop_id, stop_sequence)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            to_db,
+        )
+        _LOGGER.debug("Inserted/Updated stop times: %s", cursor.rowcount)
+
+        conn.commit()
+        conn.close()
+    except sqlite3.Error as err:
+        _LOGGER.error("Error updating database: %s", err)
+
+
+def _delete_obsolete_stops(cursor, stops):
+    cursor.execute("CREATE TEMP TABLE valid_stop_ids (stop_id TEXT PRIMARY KEY)")
+
+    cursor.executemany(
+        "INSERT INTO valid_stop_ids (stop_id) VALUES (?)",
+        [(i["stop_id"],) for i in stops],
+    )
+
+    cursor.execute("""
+        DELETE FROM stops
+        WHERE stop_id NOT IN (SELECT stop_id FROM valid_stop_ids)
+    """)
+    _LOGGER.debug("Deleted obsolete stops: %s", cursor.rowcount)
+
+    cursor.execute("DROP TABLE valid_stop_ids")
+
+
+def _delete_obsolete_trips(cursor, trips):
+    cursor.execute("CREATE TEMP TABLE valid_trip_ids (trip_id TEXT PRIMARY KEY)")
+
+    cursor.executemany(
+        "INSERT INTO valid_trip_ids (trip_id) VALUES (?)",
+        [(i["trip_id"],) for i in trips],
+    )
+
+    cursor.execute("""
+        DELETE FROM trips
+        WHERE trip_id NOT IN (SELECT trip_id FROM valid_trip_ids)
+    """)
+    _LOGGER.debug("Deleted obsolete trips: %s", cursor.rowcount)
+
+    cursor.execute("DROP TABLE valid_trip_ids")
+
+
+def _delete_obsolete_services(cursor, calendar):
+    cursor.execute("CREATE TEMP TABLE valid_service_ids (service_id TEXT PRIMARY KEY)")
+
+    cursor.executemany(
+        "INSERT INTO valid_service_ids (service_id) VALUES (?)",
+        [(i["service_id"],) for i in calendar],
+    )
+
+    cursor.execute("""
+        DELETE FROM calendar
+        WHERE service_id NOT IN (SELECT service_id FROM valid_service_ids)
+    """)
+    _LOGGER.debug("Deleted obsolete services: %s", cursor.rowcount)
+
+    cursor.execute("DROP TABLE valid_service_ids")
+
+
+def _delete_stop_times(cursor):
+    cursor.execute("""
+        DELETE FROM stop_times
+    """)
+    _LOGGER.debug("Deleted stop times: %s", cursor.rowcount)
 
 
 def _format_datetime(dt):
     return dt.strftime("%a, %d %b %Y %H:%M:%S GMT")
 
 
-def _get_file_modified_time(file_path):
+def _get_file_modified_time(file_path: Path):
     dt = datetime(1970, 1, 1)
-    if os.path.isfile(file_path):
-        dt = datetime.fromtimestamp(os.path.getmtime(file_path), tz=UTC)
+    if Path.is_file(file_path):
+        dt = datetime.fromtimestamp(file_path.stat().st_mtime, tz=UTC)
     return _format_datetime(dt)
 
 
-def _parse_csv_file(file_path):
-    with open(file_path, newline="", encoding="utf-8") as csvfile:
+def _parse_csv_file(file_path: Path):
+    with file_path.open(newline="", encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile)
         return [row.copy() for row in reader]
 
@@ -293,6 +368,18 @@ async def get_route_ids(stop_id):
 
 
 class StopTime(NamedTuple):
+    """Represents a stop time for a transit route.
+
+    Attributes:
+        route_id: The ID of the route.
+        trip_headsign: The destination or headsign for the trip.
+        departure_time: The scheduled departure time.
+        aimed_departure_time: The aimed departure time from real-time data.
+        delay: The delay in seconds, if any.
+        delta_days: The number of days offset from today.
+        realtime: Whether this data is from real-time sources.
+    """
+
     route_id: str
     trip_headsign: str
     departure_time: datetime
@@ -336,7 +423,7 @@ async def get_stop_times(stop_id, route_ids, amount, from_time):
             AND calendar.end_date >= ?
             AND departure_time > ?
             LIMIT ?
-            """,
+            """,  # noqa: S608
             [stop_id, *route_ids, today, today, start_time, amount],
         )
 
