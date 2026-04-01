@@ -232,7 +232,9 @@ class NysseSensor(SensorEntity):
             else:
                 self._journeys.clear()
 
-            self._all_data = self._data_to_display_format(departures + self._journeys)
+            self._all_data = self._data_to_display_format(departures + self._journeys)[
+                : self._max_items
+            ]
 
             _LOGGER.debug(
                 "%s: Got %s valid departures and %s valid journeys",
