@@ -316,6 +316,19 @@ def _get_file_modified_time(file_path: Path):
     return _format_datetime(dt)
 
 
+def get_gtfs_last_update() -> datetime | None:
+    """Return the local GTFS zip file modification time as local datetime."""
+    try:
+        file_path = _get_dir_path() / "extended_gtfs_tampere.zip"
+        if not Path.is_file(file_path):
+            return None
+
+        modified_utc = datetime.fromtimestamp(file_path.stat().st_mtime, tz=UTC)
+        return dt_util.as_local(modified_utc)
+    except OSError:
+        return None
+
+
 def _parse_csv_file(file_path: Path):
     with file_path.open(newline="", encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile)

@@ -22,12 +22,13 @@ Each station creates a sensor which contains data for departures from that stati
 
 ### General
 
-| Attribute    | Description                                                                         |
-| ------------ | ----------------------------------------------------------------------------------- |
-| last_refresh | Timestamp (ISO 8601 format) indicating when real-time departures were last fetched. |
-| departures   | A list of departure objects representing the next available departures.             |
-| station_name | Name of the monitored stop.                                                         |
-| station_id   | Unique identifier of the monitored stop.                                            |
+| Attribute             | Description                                                                       |
+| --------------------- | --------------------------------------------------------------------------------- |
+| last_refresh          | Timestamp (ISO 8601 format) indicating when sensor data was last updated.         |
+| departures            | A list of departure objects representing the next available departures.           |
+| station_name          | Name of the monitored stop.                                                       |
+| station_id            | Unique identifier of the monitored stop.                                          |
+| timetable_last_update | Timestamp (ISO 8601 format) indicating when timetable data file was last updated. |
 
 ### Departures
 
