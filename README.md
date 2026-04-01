@@ -27,7 +27,7 @@ Each station creates a sensor which contains data for departures from that stati
 | last_refresh | Timestamp (ISO 8601 format) indicating when real-time departures were last fetched. |
 | departures   | A list of departure objects representing the next available departures.             |
 | station_name | Name of the monitored stop.                                                         |
-| station_id   | Unique identifier of the monitored stop.                                            | 
+| station_id   | Unique identifier of the monitored stop.                                            |
 
 ### Departures
 
@@ -89,6 +89,13 @@ content: >
 ```
 
 ## Advanced usage
+
+### Advanced configuration options
+
+| Option                  | Description                                                                                                       |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Use realtime departures | Use real-time vehicle position based departure time estimates. When disabled, only timetable data is used.        |
+| Update interval         | Number of seconds between sensor updates. Does not apply to service alerts sensor, which updates every 5 minutes. |
 
 ### Combine data from multiple stops
 

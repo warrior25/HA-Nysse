@@ -53,9 +53,9 @@
             "data": {
               "realtime": "Käytä reaaliaikaista dataa",
               "scan_interval": "Sensorin päivitysväli"
-            },
-            "name": "Lisäasetukset"
-          }
+              },
+              "name": "Lisäasetukset"
+            }
         }
       }
     }

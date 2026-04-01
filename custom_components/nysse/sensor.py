@@ -36,7 +36,8 @@ from .network import get
 
 _LOGGER = logging.getLogger(__name__)
 
-SCAN_INTERVAL = timedelta(seconds=UPDATE_INTERVAL.default)
+# Applies to alerts sensor
+SCAN_INTERVAL = timedelta(minutes=5)
 
 
 async def async_setup_entry(
@@ -357,7 +358,6 @@ class ServiceAlertSensor(SensorEntity):
         """Initialize the sensor."""
         self._last_update = ""
         self._alerts = []
-        self._empty_response_counter = 0
 
     def _timestamp_to_local(self, timestamp):
         try:
@@ -367,15 +367,10 @@ class ServiceAlertSensor(SensorEntity):
             _LOGGER.error("Failed to convert timestamp to local time: %s", err)
             return ""
 
-    def _conditionally_clear_alerts(self):
-        # TODO: Individual alerts may never be removed
-        if self._empty_response_counter >= 20:
-            self._empty_response_counter = 0
-            self._alerts.clear()
-
     async def _fetch_service_alerts(self):
         try:
             alerts = []
+            _LOGGER.debug("Fetching service alerts from %s", SERVICE_ALERTS_URL)
             data = await get(SERVICE_ALERTS_URL)
             if not data:
                 _LOGGER.warning(
@@ -410,9 +405,7 @@ class ServiceAlertSensor(SensorEntity):
             return alerts
 
         except KeyError:
-            self._empty_response_counter += 1
-            self._conditionally_clear_alerts()
-            return self._alerts
+            return []
         except OSError as err:
             _LOGGER.error("Failed to fetch service alerts: %s", err)
             return []
