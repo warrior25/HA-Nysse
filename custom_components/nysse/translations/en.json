@@ -1,45 +1,63 @@
 {
-    "config": {
-        "abort": {
-            "already_configured": "Stop is already configured"
-        },
-        "error": {
-            "invalid_lines": "Select at least one line",
-            "invalid_station": "Invalid station",
-            "no_stop_points": "Failed to fetch stops. Please try again later",
-            "no_lines": "Failed to fetch lines. Please try again later"
-        },
-        "step": {
-            "options": {
-                "data": {
-                    "lines": "Lines to show",
-                    "max": "Number of departures to report",
-                    "timelimit": "Minimum time to departure"
-                },
-                "description": "Options for the station to follow",
-                "title": "Nysse Tampere"
-            },
-            "user": {
-                "data": {
-                    "station": "Station"
-                },
-                "description": "Enter the station you would like to track",
-                "title": "Nysse Tampere"
-            }
-        }
+  "config": {
+    "abort": {
+      "already_configured": "Stop is already configured"
     },
-    "options": {
-        "error": {
-            "invalid_path": "The path provided is not valid. Should be in the format `user/repo-name` and should be a valid github repository."
-        },
-        "step": {
-            "init": {
-                "data": {
-                    "max": "Number of departures to report",
-                    "timelimit": "Minimum time to departure"
-                },
-                "title": "Stop options"
-            }
+    "error": {
+      "invalid_station": "Invalid station",
+      "invalid_lines": "Select at least one line",
+      "no_stop_points": "Failed to fetch stops. Please try again later",
+      "no_lines": "Failed to fetch lines. Please try again later"
+    },
+    "step": {
+      "user": {
+        "title": "Nysse Tampere",
+        "description": "Enter the station you would like to track",
+        "data": {
+          "station": "Station"
         }
+      },
+      "options": {
+        "title": "Nysse Tampere",
+        "description": "Options for the station to follow",
+        "data": {
+          "max": "Number of departures to report",
+          "timelimit": "Minimum time to departure",
+          "lines": "Lines to show"
+        },
+        "sections": {
+          "advanced_options": {
+            "data": {
+              "realtime": "Use realtime departures",
+              "scan_interval": "Update interval"
+            },
+            "name": "Advanced options"
+          }
+        }
+      }
     }
+  },
+  "options": {
+    "error": {
+      "invalid_path": "The path provided is not valid. Should be in the format `user/repo-name` and should be a valid github repository."
+    },
+    "step": {
+      "init": {
+        "title": "Stop options",
+        "data": {
+          "max": "Number of departures to report",
+          "timelimit": "Minimum time to departure"
+        },
+        "sections": {
+          "advanced_options": {
+            "data": {
+              "realtime": "Use realtime departures",
+              "scan_interval": "Sensor update interval"
+            },
+            "name": "Advanced options"
+          }
+        }
+      }
+    }
+  }
 }
