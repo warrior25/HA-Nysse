@@ -31,7 +31,7 @@ from .const import (
     TRAM_LINES,
     UPDATE_INTERVAL,
 )
-from .fetch_api import StopTime, get_stop_times, get_stops
+from .fetch_api import StopTime, get_gtfs_last_update, get_stop_times, get_stops
 from .network import get
 
 _LOGGER = logging.getLogger(__name__)
@@ -348,6 +348,7 @@ class NysseSensor(SensorEntity):
             "departures": self._all_data,
             "station_name": self._get_stop_name(self._stop_code),
             "station_id": self._stop_code,
+            "timetable_last_update": get_gtfs_last_update(),
         }
 
 
